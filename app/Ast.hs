@@ -4,6 +4,8 @@ data Value = Num Int
     | Float Float
     | Str String
     | Bool Bool
+    | Proc [String] Stmt
+    | Null
     deriving Show
 
 valueTypeLookup :: Value -> String
@@ -19,12 +21,17 @@ data Exp = Lit Value
     | Sub Exp Exp
     | Mul Exp Exp
     | Div Exp Exp
-    | CallProc String [Exp]
     deriving Show
 
-data Stmt = VarAssign String Exp
-    | VarReassign String Exp
-    | While Exp Stmt
+data ExpStmt = CallProc String [Stmt]
+    | Expr Exp
+    deriving Show
+
+data Stmt = VarAssign String ExpStmt
+    | VarReassign String ExpStmt
+    | While ExpStmt Stmt
     | Seq [Stmt]
     | ProcDef String [String] Stmt
+    | Return ExpStmt
+    | CallExpStmt ExpStmt
     deriving Show

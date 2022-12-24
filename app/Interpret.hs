@@ -38,6 +38,31 @@ varReassign (Env vStore pStore prev) pair@(var, val) = case replaceIfExists var 
             return $ Env vStore pStore (Just env')
         Nothing -> Left $ "unbound variable `" ++ var ++ "`"
 
+addScope :: Env -> Env -> Env
+addScope prev (Env vStore pStore prevEnv) = Env vStore pStore (Just prev)
+
+removeScope :: Env -> Maybe Env
+removeScope (Env vStore pStore prev) = prev
+
+replaceVarEnv :: Env -> [(Var, Value)] -> Env
+replaceVarEnv (Env _ pStore prev) vStore = Env vStore pStore prev
+
+replaceProcEnv :: Env -> [(Var, Proc)] -> Env
+replaceProcEnv (Env vStore _ prev) pStore = Env vStore pStore prev
+
+addProcDef :: Env -> (Var, Proc) -> Env
+addProcDef (Env vStore pStore prev) var = Env vStore (var : pStore) prev
+
+-- procCall :: Env -> Var -> [Exp] -> Either Error (Env, Value)
+-- procCall env@(Env _ store prev) var args = case lookup var store of
+--     (Just (xs, stmt)) -> do
+--         vals <- mapM (\x -> eval x env) args
+--         let env' = addScope env (replaceVarEnv newEnv (zip xs vals))
+--         env'' <- exec stmt env'
+--         case removeScope env'' of
+--             (Just env''') -> Right (env''', Null)
+--             Nothing -> Right (env'', Null)
+
 replaceIfExists :: (Eq a) => a -> [(a, b)] -> b -> Maybe [(a, b)]
 replaceIfExists _ [] _ = Nothing
 replaceIfExists key (x:xs) value
@@ -80,43 +105,65 @@ divide x y =
         v2 = valueTypeLookup y
     in Left $ "cannot divide values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
 
-eval :: Exp -> Env -> Either Error Value
-eval (Lit n) _ = Right n
-eval (Var x) env = case varLookup env x of
+evalExp :: Exp -> Env -> Either Error Value
+evalExp (Lit n) _ = Right n
+evalExp (Var x) env = case varLookup env x of
     Just v -> Right v
     Nothing -> Left $ "unbound variable `" ++ x ++ "`"
-eval (Add x y) env = do
-    v1 <- eval x env
-    v2 <- eval y env
+evalExp (Add x y) env = do
+    v1 <- evalExp x env
+    v2 <- evalExp y env
     add v1 v2
-eval (Sub x y) env = do
-    v1 <- eval x env
-    v2 <- eval y env
+evalExp (Sub x y) env = do
+    v1 <- evalExp x env
+    v2 <- evalExp y env
     sub v1 v2
-eval (Mul x y) env = do
-    v1 <- eval x env
-    v2 <- eval y env
+evalExp (Mul x y) env = do
+    v1 <- evalExp x env
+    v2 <- evalExp y env
     mul v1 v2
-eval (Div x y) env = do
-    v1 <- eval x env
-    v2 <- eval y env
+evalExp (Div x y) env = do
+    v1 <- evalExp x env
+    v2 <- evalExp y env
     divide v1 v2
+
+eval :: ExpStmt -> Env -> Either Error (Env, Value)
+eval (Expr exp) env = do
+    value <- evalExp exp env
+    return (env, value)
+-- eval (ProcReturn value)
 
 exec :: Stmt -> Env -> Either Error Env
 exec (VarAssign s exp) env = do
-    value <- eval exp env 
-    return $ varAssign env (s, value)
+    (env', value) <- eval exp env
+    return $ varAssign env' (s, value)
 exec (VarReassign s exp) env = do
-    value <- eval exp env
-    varReassign env (s, value)
+    (env', value) <- eval exp env
+    varReassign env' (s, value)
 exec (While exp stmt) env = do
-    case eval exp env of
-        (Right (Bool True)) -> exec (Seq [stmt, While exp stmt]) env
-        (Right (Bool False)) -> Right env
-        (Right v) -> Left $ genericTypeError (valueTypeLookup v) "Bool"
-        (Left err) -> Left err
+    (env', value) <- eval exp env
+    case value of
+        (Bool True) -> exec (Seq [stmt, While exp stmt]) env'
+        (Bool False) -> Right env'
+        v -> Left $ genericTypeError (valueTypeLookup v) "Bool"
 exec (Seq []) env = Right env
 exec (Seq (x:xs)) env = exec x env >>= \env' -> exec (Seq xs) env'
+exec (ProcDef s args stmt) env = 
+    let procedure = (args, stmt)
+    in Right $ addProcDef env (s, procedure)
+
+execNew :: Stmt -> Either Error Env
+execNew stmt = exec stmt newEnv
 
 testAst :: Either Error Env
-testAst = exec (Seq [VarAssign "y" (Lit $ Num 5), VarReassign "y" (Lit $ Bool True)]) newEnv
+testAst = execNew (
+    Seq [
+        VarAssign "x" (Expr $ Lit $ Num 5), 
+        VarReassign "x" (Expr $ Lit $ Bool True),
+        ProcDef "function" [] (Seq [
+            VarAssign "x" (Expr $ Lit $ Float 63.2),
+            VarAssign "y" (Expr $ Lit $ Float 5.52)
+        ])
+        -- CallProc "function" []
+        ]
+    )
