@@ -1,7 +1,6 @@
 module Interpret where
 
 import Ast
-import Exception
 
 type Var = String
 type Store = [(Var, Value)]
@@ -14,6 +13,10 @@ data Env = Env {
     procEnv :: [(Var, Proc)], 
     prevEnv :: Maybe Env 
     }
+    deriving Show
+
+data Exception = ErrMsg String
+    | ReturnExcept Env ExpStmt
     deriving Show
 
 newEnv :: Env
@@ -61,10 +64,8 @@ procCall env@(Env _ store prev) var args = case lookup var store of
         else do
             (env', values) <- vals env args
             let env' = addScope env (replaceVarEnv newEnv (zip xs values))
-            env'' <- exec stmt env'
-            case removeScope env'' of
-                (Just env''') -> Right (env''', Null)
-                Nothing -> Right (env'', Null)
+            (env'', val) <- runStmt env' stmt
+            Right (removedScope env'' val)
         where
             vals :: Env -> [ExpStmt] -> Either Exception (Env, [Value])
             vals env [] = Right (env, [])
@@ -72,6 +73,17 @@ procCall env@(Env _ store prev) var args = case lookup var store of
                 (env', val) <- eval x env
                 (env'', val') <- vals env' xs
                 return (env'', val:val')
+
+            runStmt :: Env -> Stmt -> Either Exception (Env, Value)
+            runStmt env stmt = case exec stmt env of
+                (Right env') -> Right (env', Null)
+                (Left (ReturnExcept env' expStmt)) -> eval expStmt env'
+                (Left (ErrMsg msg)) -> Left $ ErrMsg msg
+
+            removedScope :: Env -> Value -> (Env, Value)
+            removedScope env val = case removeScope env of
+                (Just env') -> (env', val)
+                Nothing -> (env, val)
 
 replaceIfExists :: (Eq a) => a -> [(a, b)] -> b -> Maybe [(a, b)]
 replaceIfExists _ [] _ = Nothing
@@ -164,19 +176,29 @@ exec (ProcDef s args stmt) env =
 exec (CallExpStmt expStmt) env = case expStmt of
     (Expr exp) -> Left $ ErrMsg "unused result of expression"
     _ -> fst <$> eval expStmt env
+exec (ReturnStmt expStmt) env = Left $ ReturnExcept env expStmt
 
-execNew :: Stmt -> Either Exception Env
-execNew stmt = exec stmt newEnv
+runProgram :: Stmt -> Env -> Either String Env
+runProgram stmt env = case exec stmt env of
+    (Right env') -> Right env'
+    (Left (ReturnExcept _ _)) -> Left "unexpected return statement not nested in function"
+    (Left (ErrMsg msg)) -> Left msg
 
-testAst :: Either Exception Env
+execNew :: Stmt -> Either String Env
+execNew stmt = runProgram stmt newEnv
+
+testAst :: Either String Env
 testAst = execNew (
     Seq [
         VarAssign "x" (Expr $ Lit $ Num 5), 
         VarReassign "x" (Expr $ Lit $ Bool True),
         ProcDef "function" [] (Seq [
+            VarReassign "x" (Expr $ Lit $ Bool False),
             VarAssign "x" (Expr $ Lit $ Float 63.2),
-            VarAssign "y" (Expr $ Lit $ Float 5.52)
+            VarAssign "y" (Expr $ Lit $ Float 5.52),
+            ReturnStmt (Expr $ Lit $ Float 4.3)
         ]),
-        CallExpStmt (CallProc "function" [])
+        VarAssign "return" (CallProc "function" [])
+        
         ]
     )
