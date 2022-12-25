@@ -32,6 +32,6 @@ data Stmt = VarAssign String ExpStmt
     | While ExpStmt Stmt
     | Seq [Stmt]
     | ProcDef String [String] Stmt
-    | Return ExpStmt
+    | ReturnStmt ExpStmt
     | CallExpStmt ExpStmt
     deriving Show
