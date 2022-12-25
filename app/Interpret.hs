@@ -53,15 +53,26 @@ replaceProcEnv (Env vStore _ prev) pStore = Env vStore pStore prev
 addProcDef :: Env -> (Var, Proc) -> Env
 addProcDef (Env vStore pStore prev) var = Env vStore (var : pStore) prev
 
--- procCall :: Env -> Var -> [Exp] -> Either Error (Env, Value)
--- procCall env@(Env _ store prev) var args = case lookup var store of
---     (Just (xs, stmt)) -> do
---         vals <- mapM (\x -> eval x env) args
---         let env' = addScope env (replaceVarEnv newEnv (zip xs vals))
---         env'' <- exec stmt env'
---         case removeScope env'' of
---             (Just env''') -> Right (env''', Null)
---             Nothing -> Right (env'', Null)
+procCall :: Env -> Var -> [ExpStmt] -> Either Error (Env, Value)
+procCall env@(Env _ store prev) var args = case lookup var store of
+    Nothing -> Left $ "no function with name " ++ var ++ " found"
+    (Just (xs, stmt)) -> 
+        if length xs /= length args then 
+            Left ("invalid number of arguments: " ++ show (length xs) ++ " expected but " ++ show (length args) ++ "were given")
+        else do
+            (env', values) <- vals env args
+            let env' = addScope env (replaceVarEnv newEnv (zip xs values))
+            env'' <- exec stmt env'
+            case removeScope env'' of
+                (Just env''') -> Right (env''', Null)
+                Nothing -> Right (env'', Null)
+        where
+            vals :: Env -> [ExpStmt] -> Either Error (Env, [Value])
+            vals env [] = Right (env, [])
+            vals env (x:xs) = do
+                (env', val) <- eval x env
+                (env'', val') <- vals env' xs
+                return (env'', val:val')
 
 replaceIfExists :: (Eq a) => a -> [(a, b)] -> b -> Maybe [(a, b)]
 replaceIfExists _ [] _ = Nothing
@@ -131,7 +142,7 @@ eval :: ExpStmt -> Env -> Either Error (Env, Value)
 eval (Expr exp) env = do
     value <- evalExp exp env
     return (env, value)
--- eval (ProcReturn value)
+eval (CallProc name args) env = procCall env name args
 
 exec :: Stmt -> Env -> Either Error Env
 exec (VarAssign s exp) env = do
@@ -151,6 +162,9 @@ exec (Seq (x:xs)) env = exec x env >>= \env' -> exec (Seq xs) env'
 exec (ProcDef s args stmt) env = 
     let procedure = (args, stmt)
     in Right $ addProcDef env (s, procedure)
+exec (CallExpStmt expStmt) env = case expStmt of
+    (Expr exp) -> Left "unused result of expression"
+    _ -> fst <$> eval expStmt env
 
 execNew :: Stmt -> Either Error Env
 execNew stmt = exec stmt newEnv
@@ -163,7 +177,7 @@ testAst = execNew (
         ProcDef "function" [] (Seq [
             VarAssign "x" (Expr $ Lit $ Float 63.2),
             VarAssign "y" (Expr $ Lit $ Float 5.52)
-        ])
-        -- CallProc "function" []
+        ]),
+        CallExpStmt (CallProc "function" [])
         ]
     )
