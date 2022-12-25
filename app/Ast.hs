@@ -23,7 +23,7 @@ data Exp = Lit Value
     | Div Exp Exp
     deriving Show
 
-data ExpStmt = CallProc String [Stmt]
+data ExpStmt = CallProc String [ExpStmt]
     | Expr Exp
     deriving Show
 
