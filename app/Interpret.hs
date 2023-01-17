@@ -2,17 +2,35 @@ module Interpret where
 
 import Ast
 
+import Data.IORef
+import System.IO.Unsafe
+
 type Var = String
 type Store = [(Var, Value)]
-type Proc = ([String], Stmt)
+-- type Proc = ([String], Stmt)
 
 type Prog = Stmt
 
-data Env = Env { 
-    varEnv :: [(Var, Value)], 
-    procEnv :: [(Var, Proc)], 
-    prevEnv :: Maybe Env 
-    }
+instance (Show a) => Show (IORef a) where
+    show a = show (unsafePerformIO (readIORef a))
+
+-- data Env = Env { 
+--     varIOEnv :: IORef [(Var, Value)], 
+--     -- procEnv :: [(Var, Proc)], 
+--     prevIOEnv :: Maybe Env 
+--     }
+--     deriving Show
+
+data Env = Env {
+    varEnv :: [(Var, Value)],
+    prevEnv :: Maybe Env
+}
+    deriving Show
+        
+data ReadEnv = ReadEnv {
+    varReadEnv :: [(Var, Value)],
+    prevReadEnv :: Maybe Env
+}
     deriving Show
 
 data Exception = ErrMsg String
@@ -20,70 +38,77 @@ data Exception = ErrMsg String
     deriving Show
 
 newEnv :: Env
-newEnv = Env [] [] Nothing
+newEnv = Env [] Nothing
+
+-- newIOEnv :: IO Env
+-- newIOEnv = do
+--     var <- newIORef []
+--     return $ Env var Nothing
 
 varLookup :: Env -> Var -> Maybe Value
-varLookup (Env store _ Nothing) var = lookup var store
-varLookup (Env store _ (Just prev)) var = case lookup var store of
+varLookup (Env store Nothing) var = lookup var store
+varLookup (Env store (Just prev)) var = case lookup var store of
     (Just val) -> Just val
     Nothing -> varLookup prev var
 
 varAssign :: Env -> (Var, Value) -> Env
-varAssign (Env vStore pStore prev) var = Env (var : vStore) pStore prev
+varAssign (Env vStore prev) var = Env (var : vStore) prev
 
 varReassign :: Env -> (Var, Value) -> Either Exception Env
-varReassign (Env vStore pStore prev) pair@(var, val) = case replaceIfExists var vStore val of
-    (Just env) -> Right $ Env env pStore prev
+varReassign (Env vStore prev) pair@(var, val) = case replaceIfExists var vStore val of
+    (Just env) -> Right $ Env env prev
     Nothing -> case prev of
         (Just env) -> do
             env' <- varReassign env pair
-            return $ Env vStore pStore (Just env')
+            return $ Env vStore (Just env')
         Nothing -> Left $ ErrMsg $ "unbound variable `" ++ var ++ "`"
 
 addScope :: Env -> Env -> Env
-addScope prev (Env vStore pStore prevEnv) = Env vStore pStore (Just prev)
+addScope prev (Env vStore prevEnv) = Env vStore (Just prev)
 
 removeScope :: Env -> Maybe Env
-removeScope (Env vStore pStore prev) = prev
+removeScope (Env _ prev) = prev
 
 replaceVarEnv :: Env -> [(Var, Value)] -> Env
-replaceVarEnv (Env _ pStore prev) vStore = Env vStore pStore prev
+replaceVarEnv (Env _ prev) vStore = Env vStore prev
 
-replaceProcEnv :: Env -> [(Var, Proc)] -> Env
-replaceProcEnv (Env vStore _ prev) pStore = Env vStore pStore prev
+-- replaceProcEnv :: Env -> [(Var, Proc)] -> Env
+-- replaceProcEnv (Env vStore _ prev) pStore = Env vStore pStore prev
 
-addProcDef :: Env -> (Var, Proc) -> Env
-addProcDef (Env vStore pStore prev) var = Env vStore (var : pStore) prev
+-- addProcDef :: Env -> (Var, Proc) -> Env
+-- addProcDef (Env vStore pStore prev) var = Env vStore (var : pStore) prev
 
-procCall :: Env -> Var -> [ExpStmt] -> Either Exception (Env, Value)
-procCall env@(Env _ store prev) var args = case lookup var store of
-    Nothing -> Left $ ErrMsg $ "no function with name " ++ var ++ " found"
-    (Just (xs, stmt)) -> 
-        if length xs /= length args then 
-            Left $ ErrMsg ("invalid number of arguments: " ++ show (length xs) ++ " expected but " ++ show (length args) ++ "were given")
-        else do
-            (env', values) <- vals env args
-            let env' = addScope env (replaceVarEnv newEnv (zip xs values))
-            (env'', val) <- runStmt env' stmt
-            Right (removedScope env'' val)
-        where
-            vals :: Env -> [ExpStmt] -> Either Exception (Env, [Value])
-            vals env [] = Right (env, [])
-            vals env (x:xs) = do
-                (env', val) <- eval x env
-                (env'', val') <- vals env' xs
-                return (env'', val:val')
+procCall _ _ _ = Left $ ErrMsg $ ""
 
-            runStmt :: Env -> Stmt -> Either Exception (Env, Value)
-            runStmt env stmt = case exec stmt env of
-                (Right env') -> Right (env', Null)
-                (Left (ReturnExcept env' expStmt)) -> eval expStmt env'
-                (Left (ErrMsg msg)) -> Left $ ErrMsg msg
+-- procCall :: Env -> Var -> [ExpStmt] -> Either Exception (Env, Value)
+-- procCall env@(Env _ store prev) var args = case lookup var store of
+--     Nothing -> Left $ ErrMsg $ "no function with name " ++ var ++ " found"
+--     (Just (xs, stmt)) -> 
+--         if length xs /= length args then 
+--             Left $ ErrMsg ("invalid number of arguments: " ++ show (length xs) ++ " expected but " ++ show (length args) ++ "were given")
+--         else do
+--             (env', values) <- vals env args
+--             let env' = addScope env (replaceVarEnv newEnv (zip xs values))
+--             (env'', val) <- runStmt env' stmt
+--             Right (removedScope env'' val)
+--         where
+--             vals :: Env -> [ExpStmt] -> Either Exception (Env, [Value])
+--             vals env [] = Right (env, [])
+--             vals env (x:xs) = do
+--                 (env', val) <- eval x env
+--                 (env'', val') <- vals env' xs
+--                 return (env'', val:val')
 
-            removedScope :: Env -> Value -> (Env, Value)
-            removedScope env val = case removeScope env of
-                (Just env') -> (env', val)
-                Nothing -> (env, val)
+--             runStmt :: Env -> Stmt -> Either Exception (Env, Value)
+--             runStmt env stmt = case exec stmt env of
+--                 (Right env') -> Right (env', Null)
+--                 (Left (ReturnExcept env' expStmt)) -> eval expStmt env'
+--                 (Left (ErrMsg msg)) -> Left $ ErrMsg msg
+
+--             removedScope :: Env -> Value -> (Env, Value)
+--             removedScope env val = case removeScope env of
+--                 (Just env') -> (env', val)
+--                 Nothing -> (env, val)
 
 replaceIfExists :: (Eq a) => a -> [(a, b)] -> b -> Maybe [(a, b)]
 replaceIfExists _ [] _ = Nothing
@@ -171,8 +196,8 @@ exec (While exp stmt) env = do
 exec (Seq []) env = Right env
 exec (Seq (x:xs)) env = exec x env >>= \env' -> exec (Seq xs) env'
 exec (ProcDef s args stmt) env = 
-    let procedure = (args, stmt)
-    in Right $ addProcDef env (s, procedure)
+    let procedure = Proc args stmt
+    in Right $ varAssign env (s, procedure)
 exec (CallExpStmt expStmt) env = case expStmt of
     (Expr exp) -> Left $ ErrMsg "unused result of expression"
     _ -> fst <$> eval expStmt env
@@ -192,13 +217,21 @@ testAst = execNew (
     Seq [
         VarAssign "x" (Expr $ Lit $ Num 5), 
         VarReassign "x" (Expr $ Lit $ Bool True),
-        ProcDef "function" [] (Seq [
-            VarReassign "x" (Expr $ Lit $ Bool False),
-            VarAssign "x" (Expr $ Lit $ Float 63.2),
-            VarAssign "y" (Expr $ Lit $ Float 5.52),
-            ReturnStmt (Expr $ Lit $ Float 4.3)
-        ]),
-        VarAssign "return" (CallProc "function" [])
+        ProcDef "makeCounter" [] (Seq [
+            VarAssign "i" (Expr $ Lit $ Num 0),
+            ProcDef "count" [] (Seq [
+                VarReassign "i" (Expr $ Add (Var "i") (Lit $ Num 1))
+            ]),
+            ReturnStmt (Expr $ Var "count")
+        ])
+        -- VarAssign "counter" (CallProc "makeCounter" [])
+        -- ProcDef "function" [] (Seq [
+        --     VarReassign "x" (Expr $ Lit $ Bool False),
+        --     VarAssign "x" (Expr $ Lit $ Float 63.2),
+        --     VarAssign "y" (Expr $ Lit $ Float 5.52),
+        --     ReturnStmt (Expr $ Lit $ Float 4.3)
+        -- ]),
+        -- VarAssign "return" (CallProc "function" [])
         
         ]
     )
