@@ -17,5 +17,5 @@ main = do
         "1" -> parseTest parseProgram text
         "2" -> case parse parseProgram "error" text of
             Left err -> putStrLn "error parsing program"
-            Right stmt -> print $ (filter (isVar . snd) . varEnv) <$> (execNew stmt)
+            Right stmt -> (execNew stmt)
     

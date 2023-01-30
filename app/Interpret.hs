@@ -4,6 +4,8 @@ import Ast
 
 import Data.Either.Extra
 import Control.Monad
+import Control.Monad.Trans.Except
+import Control.Monad.Trans.Class
 import Data.Maybe (fromJust)
 
 type Prog = Stmt
@@ -74,18 +76,18 @@ guardEither True _ = return ()
 
 fixDepth :: Env -> Env -> Env
 fixDepth env env' = replaceEnvDepth env (envDepth env - envDepth env') env'
-
-funcCall :: Env -> Var -> [Value] -> Either Exception (Env, Value)
+        
+funcCall :: Env -> Var -> [Value] -> ExceptT Exception IO (Env, Value)
 funcCall env@(Env store prev) var args = do
-    (Function params stmts funcEnv) <- funcLookup env var
+    (Function params stmts funcEnv) <- except (funcLookup env var)
     let vars = zip params args
     let env' = addVarScope env vars
-    case exec env' stmts of
-        Right env'' -> Right (fromJust $ removeScope env'', Null)
-        Left (ReturnExcept env'' expStmt) -> do
-            (env''', val) <- eval env'' expStmt
-            Right (fromJust $ removeScope env''', val)
-        Left a@(_) -> Left a
+    ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
+            Right env'' -> return $ Right (fromJust $ removeScope env'', Null)
+            Left (ReturnExcept env'' expStmt) -> runExceptT $ do
+                (env''', val) <- eval env'' expStmt
+                return (fromJust $ removeScope env''', val)
+            Left a@(_) -> return $ Left a
     
 replaceIfExists :: (Eq a) => a -> [(a, b)] -> b -> Maybe [(a, b)]
 replaceIfExists _ [] _ = Nothing
@@ -148,60 +150,67 @@ evalExp env (Div x y) = do
     v1 <- evalExp env x
     v2 <- evalExp env y
     divide v1 v2
-
-eval :: Env -> ExpStmt -> Either Exception (Env, Value)
-eval env (Expr exp) = do
+            
+eval :: Env -> ExpStmt -> ExceptT Exception IO (Env, Value)
+eval env (Expr exp) = except $ do
     value <- evalExp env exp
     return (env, value)
 eval env (CallFunc name args) = do
     (env', vals) <- evalArgs env args
     funcCall env' name vals
     where
-        evalArgs :: Env -> [ExpStmt] -> Either Exception (Env, [Value])
-        evalArgs env [] = Right (env, [])
+        evalArgs :: Env -> [ExpStmt] -> ExceptT Exception IO (Env, [Value])
+        evalArgs env [] = return (env, [])
         evalArgs env (x:xs) = do
             (env', val) <- eval env x
             (env'', vals) <- evalArgs env' xs
-            return (env'', val:vals)    
-
-exec :: Env -> Stmt -> Either Exception Env
+            return (env'', val:vals)
+            
+exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp) = do
     (env', value) <- eval env exp
     return $ varAssign env' (s, value)
 exec env (VarReassign s exp) = do
     (env', value) <- eval env exp
-    varReassign env' (s, value)
+    except $ varReassign env' (s, value)
 exec env (While exp stmt) = do
     (env', value) <- eval env exp
     case value of
         (Bool True) -> exec env' (Seq [stmt, While exp stmt])
-        (Bool False) -> Right env'
-        v -> Left $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
-exec env (Seq []) = Right env
+        (Bool False) -> return env'
+        v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
+exec env (Seq []) = return env
 exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
-exec env (FuncDef s args stmt) = 
+exec env (FuncDef s args stmt) =
     let function = Func args stmt env
-    in Right $ varAssign env (s, function)
+    in return $ varAssign env (s, function)
 exec env (CallExpStmt expStmt) = case expStmt of
-    (Expr exp) -> Left $ ErrMsg "unused result of expression"
+    (Expr exp) -> throwE $ ErrMsg "unused result of expression"
     _ -> fst <$> eval env expStmt
-exec env (ReturnStmt expStmt) = Left $ ReturnExcept env expStmt
+exec env (ReturnStmt expStmt) = throwE $ ReturnExcept env expStmt
+exec env (Print expStmt) = do
+    (env', val) <- eval env expStmt
+    lift (print val)
+    return env'
+    
 
-runProgram :: Env -> Stmt -> Either String Env
-runProgram env stmt = case exec env stmt of
-    (Right env') -> Right env'
-    (Left (ReturnExcept _ _)) -> Left "unexpected return statement not nested in function"
-    (Left (ErrMsg msg)) -> Left msg
+runProgram :: Env -> Stmt -> IO ()
+runProgram env stmt = do
+    result <- runExceptT $ exec env stmt
+    case result of
+        Right _ -> return ()
+        Left (ReturnExcept _ _) -> putStrLn "unexpected return statement not nested in function"
+        Left (ErrMsg msg) -> putStrLn msg
 
-execNew :: Stmt -> Either String Env
+execNew :: Stmt -> IO ()
 execNew stmt = runProgram newEnv stmt
 
 isVar :: Value -> Bool
 isVar Func {} = False
 isVar _ = True
 
---testAst :: Either String Env
-testAst = (filter (isVar . snd) . varEnv) <$> (execNew $
+testAst :: IO ()
+testAst = (execNew $
     Seq [
         VarAssign "x" (Expr $ Lit $ Float 5),
         FuncDef "f" [] $
