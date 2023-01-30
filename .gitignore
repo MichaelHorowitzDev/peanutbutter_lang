@@ -1,0 +1,6 @@
+dist/
+
+dist-newstyle/
+
+Setup.hs
+stack.yaml
