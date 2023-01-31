@@ -171,6 +171,25 @@ parseVarReassign = do
     expStmt <- parseExpStmt
     return (VarReassign iden expStmt)
     
+parseIf :: Parser Stmt
+parseIf = do
+    lexeme (string "if") >> space1
+    expStmt <- lexeme parseExpStmt
+    stmts <- parseScope
+    elses <- elseIfs
+    If ((expStmt, stmts) : elses) <$> else'
+    where
+        elseIfs :: Parser [(ExpStmt, Stmt)]
+        elseIfs = many $ do
+            lexeme (string "else if") >> space1
+            expStmt <- lexeme parseExpStmt
+            stmts <- parseScope
+            return (expStmt, stmts)
+        else' :: Parser Stmt
+        else' = try (do
+            lexeme (string "else") >> space1
+            parseScope) <|> return (Seq [])
+    
 parseWhile :: Parser Stmt
 parseWhile = do
     lexeme (string "while")
@@ -222,7 +241,14 @@ parsePrint = lexeme (string "print") >> parseExpStmt >>= return . Print
 --    deriving Show
 
 parseStmt :: Parser Stmt
-parseStmt = try parseVarAssign <|> try parseVarReassign <|> try parseWhile <|> try parseFuncDef <|> try parsePrint <|> try parseReturnStmt <|> parseCallExpStmt
+parseStmt = try parseVarAssign 
+    <|> try parseVarReassign 
+    <|> try parseWhile 
+    <|> try parseFuncDef 
+    <|> try parseIf
+    <|> try parsePrint 
+    <|> try parseReturnStmt 
+    <|> parseCallExpStmt
 
 parseProgram :: Parser Stmt
 parseProgram = do

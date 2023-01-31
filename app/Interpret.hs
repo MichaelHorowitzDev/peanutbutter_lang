@@ -201,6 +201,13 @@ exec env (While exp stmt) = do
         (Bool True) -> exec env' (Seq [stmt, While exp stmt])
         (Bool False) -> return env'
         v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
+exec env (If [] stmt) = exec env stmt
+exec env (If ((exp, stmt):xs) stmt') = do
+    (env', value) <- eval env exp
+    case value of
+        (Bool True) -> exec env' (Seq [stmt, If xs stmt'])
+        (Bool False) -> exec env' $ If xs stmt'
+        v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
 exec env (Seq []) = return env
 exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
 exec env (FuncDef s args stmt) =

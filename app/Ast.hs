@@ -36,6 +36,7 @@ data ExpStmt = CallFunc String [ExpStmt]
 data Stmt = VarAssign String ExpStmt
     | VarReassign String ExpStmt
     | While ExpStmt Stmt
+    | If [(ExpStmt, Stmt)] Stmt
     | Seq [Stmt]
     | FuncDef String [String] Stmt
     | ReturnStmt ExpStmt
