@@ -130,6 +130,12 @@ divide x y =
     let v1 = valueTypeLookup x
         v2 = valueTypeLookup y
     in Left $ ErrMsg $ "cannot divide values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+    
+greater :: Value -> Value -> Either Exception Value
+greater (Float x) (Float y) = return $ Bool $ x > y
+
+equal :: Value -> Value -> Either Exception Value
+equal (Float x) (Float y) = return $ Bool $ x == y
 
 evalExp :: Env -> Exp -> Either Exception Value
 evalExp _ (Lit n) = Right n
@@ -150,6 +156,14 @@ evalExp env (Div x y) = do
     v1 <- evalExp env x
     v2 <- evalExp env y
     divide v1 v2
+evalExp env (Greater x y) = do
+    v1 <- evalExp env x
+    v2 <- evalExp env y
+    greater v1 v2
+evalExp env (Equal x y) = do
+    v1 <- evalExp env x
+    v2 <- evalExp env y
+    equal v1 v2
             
 eval :: Env -> ExpStmt -> ExceptT Exception IO (Env, Value)
 eval env (Expr exp) = except $ do
