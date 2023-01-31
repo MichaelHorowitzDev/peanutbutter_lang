@@ -137,6 +137,14 @@ greater (Float x) (Float y) = return $ Bool $ x > y
 equal :: Value -> Value -> Either Exception Value
 equal (Float x) (Float y) = return $ Bool $ x == y
 
+printVal :: Value -> IO ()
+printVal (String s) = putStrLn s
+printVal (Float f) = putStrLn $ show f
+printVal (Bool b) = putStrLn $ show b
+printVal (Func {}) = putStrLn "<func>"
+printVal Null = putStrLn "Null"
+
+
 evalExp :: Env -> Exp -> Either Exception Value
 evalExp _ (Lit n) = Right n
 evalExp env (Var x) = varLookup env x
@@ -204,7 +212,7 @@ exec env (CallExpStmt expStmt) = case expStmt of
 exec env (ReturnStmt expStmt) = throwE $ ReturnExcept env expStmt
 exec env (Print expStmt) = do
     (env', val) <- eval env expStmt
-    lift (print val)
+    lift (printVal val)
     return env'
     
 
