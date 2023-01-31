@@ -184,6 +184,7 @@ parseScope = do
     space
     stmts <- many parseStmt
     lexeme (char '}')
+    space
     return (Seq stmts)
     
 parseFuncDef :: Parser Stmt
@@ -194,21 +195,21 @@ parseFuncDef = do
     (lexeme (char ')') >> parseScope >>= (return . FuncDef iden []))
      <|> (do
         args <- parseArgs
-        char ')'
+        lexeme (char ')')
         stmts <- parseScope
         return $ FuncDef iden args stmts)
     where
         parseArgs :: Parser [String]
         parseArgs = (do
             first <- try parseIdentifier
-            rest <- many $ (lexeme $ char ',') >> parseIdentifier
+            rest <- many $ (lexeme $ char ',') >> lexeme (parseIdentifier)
             return (first:rest))
             
 parseReturnStmt :: Parser Stmt
-parseReturnStmt = string "return" >> parseExpStmt >>= return . ReturnStmt
+parseReturnStmt = lexeme (string "return") >> parseExpStmt >>= return . ReturnStmt
 
 parsePrint :: Parser Stmt
-parsePrint = string "print" >> parseExpStmt >>= return . Print
+parsePrint = lexeme (string "print") >> parseExpStmt >>= return . Print
  
 --data Stmt = VarAssign String ExpStmt
 --    | VarReassign String ExpStmt
@@ -235,6 +236,10 @@ parseProgram = do
 --testVarAssign = "var y = 5"
 
 testCallFunc = "var y = cube(x)"
+
+testThing = "func factorial(x) {\nvar total = 1\nwhile x > 1 {} }"
+
+testOtherThing = "while true { func fac() {} }"
     
 
 --parseExpStmt :
