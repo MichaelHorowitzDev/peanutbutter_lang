@@ -18,17 +18,28 @@ lexeme = (space >>)
 lexeme1 :: Parser a -> Parser a
 lexeme1 = (space1 >>)
 
-floatNum :: Parser Float
-floatNum = do
-    int <- some digitChar
-    (do 
-        char '.'
-        float <- some digitChar
-        return $ read $ int ++ "." ++ float)
-     <|> (return $ read int)
-     
-parseFloat :: Parser Float
-parseFloat = (char '-' >> negate <$> floatNum) <|> floatNum
+parseNum :: Parser Exp
+parseNum = do
+    char '-'
+    int <- intPart
+    (floatPart >>= \float -> return $ Lit $ Float $ negate (read $ int ++ "." ++ float)) 
+        <|> return (Lit $ Int $ negate (read int))
+    <|> do
+        int <- intPart
+        (floatPart >>= \float -> return $ Lit $ Float (read $ int ++ "." ++ float))
+            <|> return (Lit $ Int (read int))
+    where
+        intPart :: Parser String
+        intPart = do
+            int <- some digitChar
+            notFollowedBy letterChar
+            return int
+        floatPart :: Parser String
+        floatPart = do
+            char '.'
+            float <- some digitChar
+            notFollowedBy letterChar
+            return float
 
 parseString :: Parser String
 parseString = char '\"' *> manyTill L.charLiteral (char '\"')
@@ -41,8 +52,8 @@ parseBool = (string "true" >> return True) <|> (string "false" >> return False)
 
 parsePrimary :: Parser Exp
 parsePrimary = space >> (parseString >>= return . Lit . String) 
-    <|> (parseBool >>= return . Lit . Bool) 
-    <|> (parseFloat >>= return . Lit . Float) 
+    <|> (parseBool >>= return . Lit . Bool)
+    <|> parseNum
     <|> (parseIdentifier >>= return . Var)
     <|> (do
         char '('

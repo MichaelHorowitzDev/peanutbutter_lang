@@ -44,7 +44,8 @@ data Stmt = VarAssign String ExpStmt
     | Print ExpStmt
     deriving Show
     
-data Value = Float Float
+data Value = Int Int
+    | Float Float
     | String String
 --    | Var String
     | Bool Bool
@@ -84,7 +85,7 @@ data Exp = Add Exp Exp
 
 valueTypeLookup :: Value -> String
 valueTypeLookup v = case v of
---    Num {} -> "Int"
+    Int {} -> "Int"
     Float {} -> "Float"
     String {} -> "String"
     Bool {} -> "Bool"

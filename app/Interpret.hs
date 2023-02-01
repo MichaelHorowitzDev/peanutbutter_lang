@@ -99,47 +99,84 @@ genericTypeException :: String -> String -> String
 genericTypeException x y = 
     "cannot use value of type `" ++ x ++ "` where value of type `" ++ y ++ "` was expected"
 
-add :: Value -> Value -> Either Exception Value
---add (Num x) (Num y) = Right $ Num (x + y)
-add (Float x) (Float y) = Right $ Float (x + y)
-add x y =
+operationTypeError :: String -> Value -> Value -> Either Exception b
+operationTypeError op x y =
     let v1 = valueTypeLookup x
         v2 = valueTypeLookup y
-    in Left $ ErrMsg $ "cannot add values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+    in Left $ ErrMsg $ "cannot " ++ op ++ " values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+
+operationTypeErrorSingle :: String -> Value -> Either Exception b
+operationTypeErrorSingle op x =
+    let v1 = valueTypeLookup x
+    in Left $ ErrMsg $ "cannot " ++ op ++ " value of type `" ++ v1 ++ "`"
+
+add :: Value -> Value -> Either Exception Value
+add (Int x) (Int y) = Right $ Int (x + y)
+add (Float x) (Float y) = Right $ Float (x + y)
+add x y = operationTypeError "add" x y
 
 sub :: Value -> Value -> Either Exception Value
---sub (Num x) (Num y) = Right $ Num (x - y)
+sub (Int x) (Int y) = Right $ Int (x - y)
 sub (Float x) (Float y) = Right $ Float (x - y)
-sub x y =
-    let v1 = valueTypeLookup x
-        v2 = valueTypeLookup y
-    in Left $ ErrMsg $ "cannot subtract values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+sub x y = operationTypeError "subtract" x y
 
 mul :: Value -> Value -> Either Exception Value
---mul (Num x) (Num y) = Right $ Num (x * y)
+mul (Int x) (Int y) = Right $ Int (x * y)
 mul (Float x) (Float y) = Right $ Float (x * y)
-mul x y =
-    let v1 = valueTypeLookup x
-        v2 = valueTypeLookup y
-    in Left $ ErrMsg $ "cannot multiply values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+mul x y = operationTypeError "multiply" x y
 
 divide :: Value -> Value -> Either Exception Value
---divide (Num x) (Num y) = Right $ Num (x `div` y)
+divide (Int x) (Int y) = Right $ Int (x `div` y)
 divide (Float x) (Float y) = Right $ Float (x / y)
-divide x y =
-    let v1 = valueTypeLookup x
-        v2 = valueTypeLookup y
-    in Left $ ErrMsg $ "cannot divide values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+divide x y = operationTypeError "divide" x y
     
 greater :: Value -> Value -> Either Exception Value
+greater (Int x) (Int y) = return $ Bool $ x > y
 greater (Float x) (Float y) = return $ Bool $ x > y
+greater x y = operationTypeError "compare" x y
+
+greaterEqual :: Value -> Value -> Either Exception Value
+greaterEqual (Int x) (Int y) = return $ Bool $ x >= y
+greaterEqual (Float x) (Float y) = return $ Bool $ x >= y
+greaterEqual x y = operationTypeError "compare" x y
+
+lesser :: Value -> Value -> Either Exception Value
+lesser (Int x) (Int y) = return $ Bool $ x < y
+lesser (Float x) (Float y) = return $ Bool $ x < y
+lesser x y = operationTypeError "compare" x y
+
+lesserEqual :: Value -> Value -> Either Exception Value
+lesserEqual (Int x) (Int y) = return $ Bool $ x <= y
+lesserEqual (Float x) (Float y) = return $ Bool $ x <= y
+lesserEqual x y = operationTypeError "compare" x y
 
 equal :: Value -> Value -> Either Exception Value
+equal (Int x) (Int y) = return $ Bool $ x == y
 equal (Float x) (Float y) = return $ Bool $ x == y
+equal (String x) (String y) = return $ Bool $ x == y
+equal (Bool x) (Bool y) = return $ Bool $ x == y
+equal x y = operationTypeError "compare" x y
+
+notEqual :: Value -> Value -> Either Exception Value
+notEqual (Int x) (Int y) = return $ Bool $ x /= y
+notEqual (Float x) (Float y) = return $ Bool $ x /= y
+notEqual (String x) (String y) = return $ Bool $ x /= y
+notEqual (Bool x) (Bool y) = return $ Bool $ x /= y
+notEqual x y = operationTypeError "compare" x y
+
+negateVal :: Value -> Either Exception Value
+negateVal (Int x) = return $ Int (negate x)
+negateVal (Float x) = return $ Float (negate x)
+negateVal x = operationTypeErrorSingle "negate" x
+
+bang :: Value -> Either Exception Value
+bang (Bool b) = return $ Bool (not b)
+bang x = operationTypeErrorSingle "invert" x
 
 printVal :: Value -> IO ()
 printVal (String s) = putStrLn s
 printVal (Float f) = putStrLn $ show f
+printVal (Int n) = putStrLn $ show n
 printVal (Bool b) = putStrLn $ show b
 printVal (Func {}) = putStrLn "<func>"
 printVal Null = putStrLn "Null"
@@ -168,10 +205,32 @@ evalExp env (Greater x y) = do
     v1 <- evalExp env x
     v2 <- evalExp env y
     greater v1 v2
+evalExp env (Less x y) = do
+    v1 <- evalExp env x
+    v2 <- evalExp env y
+    lesser v1 v2
+evalExp env (GreaterEqual x y) = do
+    v1 <- evalExp env x
+    v2 <- evalExp env y
+    greaterEqual v1 v2
+evalExp env (LessEqual x y) = do
+    v1 <- evalExp env x
+    v2 <- evalExp env y
+    lesserEqual v1 v2
 evalExp env (Equal x y) = do
     v1 <- evalExp env x
     v2 <- evalExp env y
     equal v1 v2
+evalExp env (NotEqual x y) = do
+    v1 <- evalExp env x
+    v2 <- evalExp env y
+    notEqual v1 v2
+evalExp env (Negate x) = do
+    v1 <- evalExp env x
+    negateVal v1
+evalExp env (Bang x) = do
+    v1 <- evalExp env x
+    bang v1
             
 eval :: Env -> ExpStmt -> ExceptT Exception IO (Env, Value)
 eval env (Expr exp) = except $ do
