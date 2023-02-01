@@ -21,7 +21,7 @@ envDepth :: Env -> Int
 envDepth (Env _ prev) = case prev of
   Nothing -> 0
   Just env -> 1 + envDepth env
-  
+
 replaceEnvDepth :: Env -> Int -> Env -> Env
 replaceEnvDepth _ 0 env = env
 replaceEnvDepth env@(Env store Nothing) _ _ = env
@@ -69,14 +69,14 @@ funcLookup :: Env -> Var -> Either Exception Function
 funcLookup env var = case envLookup env var of
     (Just (Func params stmts funcEnv)) -> Right $ Function params stmts funcEnv
     _ -> Left $ ErrMsg $ "no function with name " ++ var ++ " found"
-    
+
 guardEither :: Bool -> a -> Either a ()
 guardEither False a = Left a
 guardEither True _ = return ()
 
 fixDepth :: Env -> Env -> Env
 fixDepth env env' = replaceEnvDepth env (envDepth env - envDepth env') env'
-        
+
 funcCall :: Env -> Var -> [Value] -> ExceptT Exception IO (Env, Value)
 funcCall env@(Env store prev) var args = do
     (Function params stmts funcEnv) <- except (funcLookup env var)
@@ -88,7 +88,7 @@ funcCall env@(Env store prev) var args = do
                 (env''', val) <- eval env'' expStmt
                 return (fromJust $ removeScope env''', val)
             Left a@(_) -> return $ Left a
-    
+
 replaceIfExists :: (Eq a) => a -> [(a, b)] -> b -> Maybe [(a, b)]
 replaceIfExists _ [] _ = Nothing
 replaceIfExists key (x:xs) value
@@ -96,7 +96,7 @@ replaceIfExists key (x:xs) value
     | otherwise = (x :) <$> replaceIfExists key xs value
 
 genericTypeException :: String -> String -> String
-genericTypeException x y = 
+genericTypeException x y =
     "cannot use value of type `" ++ x ++ "` where value of type `" ++ y ++ "` was expected"
 
 operationTypeError :: String -> Value -> Value -> Either Exception b
@@ -129,7 +129,7 @@ divide :: Value -> Value -> Either Exception Value
 divide (Int x) (Int y) = Right $ Int (x `div` y)
 divide (Float x) (Float y) = Right $ Float (x / y)
 divide x y = operationTypeError "divide" x y
-    
+
 greater :: Value -> Value -> Either Exception Value
 greater (Int x) (Int y) = return $ Bool $ x > y
 greater (Float x) (Float y) = return $ Bool $ x > y
@@ -231,7 +231,7 @@ evalExp env (Negate x) = do
 evalExp env (Bang x) = do
     v1 <- evalExp env x
     bang v1
-            
+
 eval :: Env -> ExpStmt -> ExceptT Exception IO (Env, Value)
 eval env (Expr exp) = except $ do
     value <- evalExp env exp
@@ -246,7 +246,7 @@ eval env (CallFunc name args) = do
             (env', val) <- eval env x
             (env'', vals) <- evalArgs env' xs
             return (env'', val:vals)
-            
+
 exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp) = do
     (env', value) <- eval env exp
@@ -280,7 +280,7 @@ exec env (Print expStmt) = do
     (env', val) <- eval env expStmt
     lift (printVal val)
     return env'
-    
+
 
 runProgram :: Env -> Stmt -> IO ()
 runProgram env stmt = do
