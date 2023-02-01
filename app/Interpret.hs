@@ -175,8 +175,8 @@ bang x = operationTypeErrorSingle "invert" x
 
 printVal :: Value -> IO ()
 printVal (String s) = putStrLn s
-printVal (Float f) = putStrLn $ show f
-printVal (Int n) = putStrLn $ show n
+printVal (Float f) = print f
+printVal (Int n) = print n
 printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
 printVal Null = putStrLn "Null"
