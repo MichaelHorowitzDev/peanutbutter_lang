@@ -177,7 +177,7 @@ printVal :: Value -> IO ()
 printVal (String s) = putStrLn s
 printVal (Float f) = putStrLn $ show f
 printVal (Int n) = putStrLn $ show n
-printVal (Bool b) = putStrLn $ show b
+printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
 printVal Null = putStrLn "Null"
 
