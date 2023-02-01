@@ -80,6 +80,7 @@ fixDepth env env' = replaceEnvDepth env (envDepth env - envDepth env') env'
 funcCall :: Env -> Var -> [Value] -> ExceptT Exception IO (Env, Value)
 funcCall env@(Env store prev) var args = do
     (Function params stmts funcEnv) <- except (funcLookup env var)
+    except $ testArity params args
     let vars = zip params args
     let env' = addVarScope env vars
     ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
@@ -88,6 +89,14 @@ funcCall env@(Env store prev) var args = do
                 (env''', val) <- eval env'' expStmt
                 return (fromJust $ removeScope env''', val)
             Left a@(_) -> return $ Left a
+    where
+        testArity :: [String] -> [Value] -> Either Exception ()
+        testArity xs ys = guardEither (params == args)
+            (ErrMsg $ "incorrect number of arguments passed to func `" ++ var ++ "`" ++
+            "\n" ++ show params ++ " parameters expected but " ++ show args ++ " arguments passed in")
+            where
+                params = length xs
+                args = length ys
 
 replaceIfExists :: (Eq a) => a -> [(a, b)] -> b -> Maybe [(a, b)]
 replaceIfExists _ [] _ = Nothing
