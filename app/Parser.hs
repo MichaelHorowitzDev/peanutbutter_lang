@@ -8,6 +8,7 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Void (Void)
 import Control.Monad
+import Data.Functor
 import Ast
     
 type Parser = Parsec Void String
@@ -51,10 +52,10 @@ parseBool :: Parser Bool
 parseBool = (string "true" >> return True) <|> (string "false" >> return False)
 
 parsePrimary :: Parser Exp
-parsePrimary = space >> (parseString >>= return . Lit . String) 
-    <|> (parseBool >>= return . Lit . Bool)
+parsePrimary = space >> (parseString <&> Lit . String) 
+    <|> (parseBool <&> Lit . Bool)
     <|> parseNum
-    <|> (parseIdentifier >>= return . Var)
+    <|> (parseIdentifier <&> Var)
     <|> (do
         char '('
         expr <- parseExpression
@@ -111,7 +112,7 @@ parseComparison = do
     where
         flattenedComparison :: Exp -> Parser Exp
         flattenedComparison c = (do
-            op <- (string ">=" <|> string ">" <|> string "<=" <|> string "<")
+            op <- string ">=" <|> string ">" <|> string "<=" <|> string "<"
             c1 <- parseFactor
             case op of
                 ">" -> flattenedComparison (Greater c c1)
@@ -129,7 +130,7 @@ parseEquality = do
     where
         flattenedEquality :: Exp -> Parser Exp
         flattenedEquality e = (do
-            op <- (string "==" <|> string "!=")
+            op <- string "==" <|> string "!="
             e1 <- parseFactor
             case op of
                 "==" -> flattenedEquality (Equal e e1)
@@ -140,11 +141,11 @@ parseExpression :: Parser Exp
 parseExpression = parseEquality
 
 parseExpStmt :: Parser ExpStmt
-parseExpStmt = try parseCallFunc <|> (parseExpression >>= return . Expr)
+parseExpStmt = try parseCallFunc <|> (Expr <$> parseExpression)
 
 parseCallFunc :: Parser ExpStmt
 parseCallFunc = do
-    iden <- lexeme (parseIdentifier)
+    iden <- lexeme parseIdentifier
     char '('
     (lexeme (char ')') >> return (CallFunc iden [])) 
      <|> (do
@@ -153,22 +154,24 @@ parseCallFunc = do
         return $ CallFunc iden args)
     where
         parseArgs :: Parser [ExpStmt]
-        parseArgs = (do
+        parseArgs = do
             first <- try parseExpStmt
-            rest <- many $ (lexeme $ char ',') >> parseExpStmt
-            return (first:rest))
+            rest <- many $ lexeme (char ',') >> parseExpStmt
+            return (first:rest)
             
 parseCallExpStmt :: Parser Stmt
-parseCallExpStmt = try (parseCallFunc >>= return . CallExpStmt) 
-    <|> (parseExpression >>= return . CallExpStmt . Expr)
+parseCallExpStmt = try (CallExpStmt <$> parseCallFunc) 
+    <|> (CallExpStmt . Expr <$> parseExpression)
 
 parseVarAssign :: Parser Stmt
 parseVarAssign = do
-    lexeme (string "var")
-    iden <- space1 >> parseIdentifier
-    lexeme (char '=')
-    expStmt <- parseExpStmt
-    return (VarAssign iden expStmt)
+    string "var"
+    space1 <|> fail "expected assignment"
+    iden <- parseIdentifier <|> fail "no valid identifier found"
+    space
+    char '=' <|> fail "no `=` found in variable assignment"
+    space
+    VarAssign iden <$> parseExpStmt <|> fail "no right hand side of equation"
     
 guardError :: Bool -> String -> Parser ()
 guardError True s = fail s
@@ -176,11 +179,10 @@ guardError False s = return ()
     
 parseVarReassign :: Parser Stmt
 parseVarReassign = do
-    iden <- lexeme (parseIdentifier)
+    iden <- parseIdentifier
     guardError (iden == "var") "unexpected `var` keyword found in variable reassign"
     lexeme (char '=')
-    expStmt <- parseExpStmt
-    return (VarReassign iden expStmt)
+    VarReassign iden <$> parseExpStmt
     
 parseIf :: Parser Stmt
 parseIf = do
@@ -203,10 +205,9 @@ parseIf = do
     
 parseWhile :: Parser Stmt
 parseWhile = do
-    lexeme (string "while")
-    expStmt <- lexeme (parseExpStmt)
-    stmts <- parseScope
-    return (While expStmt stmts)
+    string "while"
+    expStmt <- lexeme parseExpStmt
+    While expStmt <$> parseScope
     
 parseScope :: Parser Stmt
 parseScope = do
@@ -219,27 +220,26 @@ parseScope = do
     
 parseFuncDef :: Parser Stmt
 parseFuncDef = do
-    lexeme (string "func")
-    iden <- lexeme (parseIdentifier)
+    string "func"
+    iden <- lexeme parseIdentifier
     char '('
-    (lexeme (char ')') >> parseScope >>= (return . FuncDef iden []))
-     <|> (do
+    (lexeme (char ')') >> (FuncDef iden [] <$> parseScope))
+     <|> do
         args <- parseArgs
         lexeme (char ')')
-        stmts <- parseScope
-        return $ FuncDef iden args stmts)
+        FuncDef iden args <$> parseScope
     where
         parseArgs :: Parser [String]
-        parseArgs = (do
+        parseArgs = do
             first <- try parseIdentifier
-            rest <- many $ (lexeme $ char ',') >> lexeme (parseIdentifier)
-            return (first:rest))
+            rest <- many $ lexeme (char ',') >> lexeme parseIdentifier
+            return (first:rest)
             
 parseReturnStmt :: Parser Stmt
-parseReturnStmt = lexeme (string "return") >> parseExpStmt >>= return . ReturnStmt
+parseReturnStmt = (string "return" >> parseExpStmt) <&> ReturnStmt
 
 parsePrint :: Parser Stmt
-parsePrint = lexeme (string "print") >> parseExpStmt >>= return . Print
+parsePrint = (string "print" >> parseExpStmt) <&> Print
  
 --data Stmt = VarAssign String ExpStmt
 --    | VarReassign String ExpStmt
@@ -251,19 +251,27 @@ parsePrint = lexeme (string "print") >> parseExpStmt >>= return . Print
 --    | Print ExpStmt
 --    deriving Show
 
+-- parseStmt' :: Parser Stmt
+-- parseStmt' = do
+--     stmt <- (parseVarAssign
+--         <|> parseFuncDef
+--         <|> parseCallExpStmt)
+--     eof
+--     return stmt
+
 parseStmt :: Parser Stmt
-parseStmt = try parseVarAssign 
-    <|> try parseVarReassign 
-    <|> try parseWhile 
-    <|> try parseFuncDef 
-    <|> try parseIf
-    <|> try parsePrint 
-    <|> try parseReturnStmt 
+parseStmt = parseVarAssign
+    <|> parseWhile 
+    <|> parseFuncDef
+    <|> parseIf
+    <|> parsePrint 
+    <|> parseReturnStmt 
+    <|> parseVarReassign
     <|> parseCallExpStmt
 
 parseProgram :: Parser Stmt
 parseProgram = do
-    stmts <- many (try parseStmt)
+    stmts <- many (space >> parseStmt)
     space
     eof
     return (Seq stmts)
