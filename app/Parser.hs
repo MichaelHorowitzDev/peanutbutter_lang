@@ -63,12 +63,9 @@ parsePrimary = space >> (parseString <&> Lit . String)
         return expr)
         
 parseUnary :: Parser Exp
-parseUnary = space >> (do
-    op <- char '-' <|> char '!'
-    u <- parseUnary
-    case op of
-        '-' -> return (Negate u)
-        '!' -> return (Bang u))
+parseUnary = do
+    op <- try $ lexeme $ (char '-' $> Negate) <|> (char '!' $> Bang)
+    op <$> parseUnary
     <|> parsePrimary
 
 parseFactor :: Parser Exp
@@ -79,13 +76,11 @@ parseFactor = do
     flattenedFactor u
      where
          flattenedFactor :: Exp -> Parser Exp
-         flattenedFactor p = (do
-             op <- try $ lexeme (char '*' <|> char '/')
-             p1 <- parseUnary
-             case op of
-                 '*' -> flattenedFactor (Mul p p1)
-                 '/' -> flattenedFactor (Div p p1))
-             <|> return p
+         flattenedFactor p = do
+            op <- try $ lexeme $ (char '*' $> Mul) <|> (char '/' $> Div)
+            p1 <- parseUnary
+            flattenedFactor (op p p1)
+            <|> return p
              
 parseTerm :: Parser Exp
 parseTerm = do
@@ -95,12 +90,10 @@ parseTerm = do
     flattenedTerm f
     where
         flattenedTerm :: Exp -> Parser Exp
-        flattenedTerm f = (do
-            op <- try $ lexeme (char '+' <|> char '-')
+        flattenedTerm f = do
+            op <- try $ lexeme $ (char '+' $> Add) <|> (char '-' $> Sub)
             f1 <- parseFactor
-            case op of
-                '+' -> flattenedTerm (Add f f1)
-                '-' -> flattenedTerm (Sub f f1))
+            flattenedTerm (op f f1)
             <|> return f
             
 parseComparison :: Parser Exp
@@ -111,15 +104,14 @@ parseComparison = do
     flattenedComparison t
     where
         flattenedComparison :: Exp -> Parser Exp
-        flattenedComparison c = (do
-            op <- string ">=" <|> string ">" <|> string "<=" <|> string "<"
-            c1 <- parseFactor
-            case op of
-                ">" -> flattenedComparison (Greater c c1)
-                ">=" -> flattenedComparison (GreaterEqual c c1)
-                "<" -> flattenedComparison (Less c c1)
-                "<=" -> flattenedComparison (LessEqual c c1))
-            <|> return c
+        flattenedComparison t = do
+            op <- try $ lexeme $ (string ">=" $> GreaterEqual) 
+                <|> (string ">" $> Greater) 
+                <|> (string "<=" $> LessEqual) 
+                <|> (string "<" $> Less)
+            t1 <- parseTerm
+            flattenedComparison (op t t1)
+            <|> return t
             
 parseEquality :: Parser Exp
 parseEquality = do
@@ -129,12 +121,10 @@ parseEquality = do
     flattenedEquality c
     where
         flattenedEquality :: Exp -> Parser Exp
-        flattenedEquality e = (do
-            op <- string "==" <|> string "!="
-            e1 <- parseFactor
-            case op of
-                "==" -> flattenedEquality (Equal e e1)
-                "!=" -> flattenedEquality (NotEqual e e1))
+        flattenedEquality e = do
+            op <- try $ lexeme $ (string "==" $> Equal) <|> (string "!=" $> NotEqual)
+            e1 <- parseComparison
+            flattenedEquality (op e e1)
             <|> return e
 
 parseExpression :: Parser Exp
