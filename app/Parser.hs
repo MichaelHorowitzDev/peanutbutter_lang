@@ -256,7 +256,7 @@ parseStmt = parseVarAssign
     <|> parseIf
     <|> parsePrint 
     <|> parseReturnStmt 
-    <|> parseVarReassign
+    <|> try parseVarReassign
     <|> parseCallExpStmt
 
 parseProgram :: Parser Stmt
