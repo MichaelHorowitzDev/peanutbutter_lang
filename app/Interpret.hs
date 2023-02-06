@@ -11,7 +11,7 @@ import Data.Maybe (fromJust)
 type Prog = Stmt
 
 data Exception = ErrMsg String
-    | ReturnExcept Env ExpStmt
+    | ReturnExcept Env Exp
     deriving Show
 
 newEnv :: Env
@@ -77,22 +77,22 @@ guardEither True _ = return ()
 fixDepth :: Env -> Env -> Env
 fixDepth env env' = replaceEnvDepth env (envDepth env - envDepth env') env'
 
-funcCall :: Env -> Var -> [Value] -> ExceptT Exception IO (Env, Value)
-funcCall env@(Env store prev) var args = do
-    (Function params stmts funcEnv) <- except (funcLookup env var)
+funcCall :: Env -> Function -> [Value] -> ExceptT Exception IO Value
+funcCall env@(Env store prev) function args = do
+    let (Function params stmts funcEnv) = function
     except $ testArity params args
     let vars = zip params args
-    let env' = addVarScope env vars
+    let env' = addVarScope funcEnv vars
     ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
-            Right env'' -> return $ Right (fromJust $ removeScope env'', Null)
+            Right env'' -> return $ Right Null
             Left (ReturnExcept env'' expStmt) -> runExceptT $ do
-                (env''', val) <- eval env'' expStmt
-                return (fromJust $ removeScope env''', val)
+                val <- eval env'' expStmt
+                return val
             Left a@(_) -> return $ Left a
     where
         testArity :: [String] -> [Value] -> Either Exception ()
         testArity xs ys = guardEither (params == args)
-            (ErrMsg $ "incorrect number of arguments passed to func `" ++ var ++ "`" ++
+            (ErrMsg $ "incorrect number of arguments passed to function" ++
             "\n" ++ show params ++ " parameters expected but " ++ show args ++ " arguments passed in")
             where
                 params = length xs
@@ -190,106 +190,103 @@ printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
 printVal Null = putStrLn "Null"
 
-
-evalExp :: Env -> Exp -> Either Exception Value
-evalExp _ (Lit n) = Right n
-evalExp env (Var x) = varLookup env x
-evalExp env (Add x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    add v1 v2
-evalExp env (Sub x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    sub v1 v2
-evalExp env (Mul x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    mul v1 v2
-evalExp env (Div x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    divide v1 v2
-evalExp env (Greater x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    greater v1 v2
-evalExp env (Less x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    lesser v1 v2
-evalExp env (GreaterEqual x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    greaterEqual v1 v2
-evalExp env (LessEqual x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    lesserEqual v1 v2
-evalExp env (Equal x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    equal v1 v2
-evalExp env (NotEqual x y) = do
-    v1 <- evalExp env x
-    v2 <- evalExp env y
-    notEqual v1 v2
-evalExp env (Negate x) = do
-    v1 <- evalExp env x
-    negateVal v1
-evalExp env (Bang x) = do
-    v1 <- evalExp env x
-    bang v1
-
-eval :: Env -> ExpStmt -> ExceptT Exception IO (Env, Value)
-eval env (Expr exp) = except $ do
-    value <- evalExp env exp
-    return (env, value)
-eval env (CallFunc name args) = do
-    (env', vals) <- evalArgs env args
-    funcCall env' name vals
+eval :: Env -> Exp -> ExceptT Exception IO Value
+eval env (CallFunc exp args) = do
+    value <- eval env exp
+    case value of
+        (Func params stmts funcEnv) -> do
+            args <- evalArgs env args
+            funcCall env (Function params stmts funcEnv) args
+        _ -> throwE $ ErrMsg $ "cannot call value of non function type `" ++ valueTypeLookup value ++ "`"
     where
-        evalArgs :: Env -> [ExpStmt] -> ExceptT Exception IO (Env, [Value])
-        evalArgs env [] = return (env, [])
+        evalArgs :: Env -> [Exp] -> ExceptT Exception IO [Value]
+        evalArgs env [] = return []
         evalArgs env (x:xs) = do
-            (env', val) <- eval env x
-            (env'', vals) <- evalArgs env' xs
-            return (env'', val:vals)
+            val <- eval env x
+            vals <- evalArgs env xs
+            return (val:vals)
+eval _ (Lit n) = return n
+eval env (Var x) = except $ varLookup env x
+eval env (Add x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ add v1 v2
+eval env (Sub x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ sub v1 v2
+eval env (Mul x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ mul v1 v2
+eval env (Div x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ divide v1 v2
+eval env (Greater x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ greater v1 v2
+eval env (Less x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ lesser v1 v2
+eval env (GreaterEqual x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ greaterEqual v1 v2
+eval env (LessEqual x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ lesserEqual v1 v2
+eval env (Equal x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ equal v1 v2
+eval env (NotEqual x y) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ notEqual v1 v2
+eval env (Negate x) = do
+    v1 <- eval env x
+    except $ negateVal v1
+eval env (Bang x) = do
+    v1 <- eval env x
+    except $ bang v1
 
 exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp) = do
-    (env', value) <- eval env exp
-    return $ varAssign env' (s, value)
+    value <- eval env exp
+    return $ varAssign env (s, value)
 exec env (VarReassign s exp) = do
-    (env', value) <- eval env exp
-    except $ varReassign env' (s, value)
+    value <- eval env exp
+    except $ varReassign env (s, value)
 exec env (While exp stmt) = do
-    (env', value) <- eval env exp
+    value <- eval env exp
     case value of
-        (Bool True) -> exec env' (Seq [stmt, While exp stmt])
-        (Bool False) -> return env'
+        (Bool True) -> exec env (Seq [stmt, While exp stmt])
+        (Bool False) -> return env
         v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
 exec env (If [] stmt) = exec env stmt
 exec env (If ((exp, stmt):xs) stmt') = do
-    (env', value) <- eval env exp
+    value <- eval env exp
     case value of
-        (Bool True) -> exec env' stmt
-        (Bool False) -> exec env' $ If xs stmt'
+        (Bool True) -> exec env stmt
+        (Bool False) -> exec env $ If xs stmt'
         v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
 exec env (Seq []) = return env
 exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
 exec env (FuncDef s args stmt) =
     let function = Func args stmt env
     in return $ varAssign env (s, function)
-exec env (CallExpStmt expStmt) = case expStmt of
-    (Expr exp) -> throwE $ ErrMsg "unused result of expression"
-    _ -> fst <$> eval env expStmt
+exec env (CallExp exp) = case exp of
+    (CallFunc name args) -> eval env exp >> return env
+    _ -> eval env exp >> return env
 exec env (ReturnStmt expStmt) = throwE $ ReturnExcept env expStmt
 exec env (Print expStmt) = do
-    (env', val) <- eval env expStmt
+    val <- eval env expStmt
     lift (printVal val)
-    return env'
-
+    return env
 
 runProgram :: Env -> Stmt -> IO ()
 runProgram env stmt = do
@@ -305,17 +302,6 @@ execNew stmt = runProgram newEnv stmt
 isVar :: Value -> Bool
 isVar Func {} = False
 isVar _ = True
-
-testAst :: IO ()
-testAst = (execNew $
-    Seq [
-        VarAssign "x" (Expr $ Lit $ Float 5),
-        FuncDef "f" [] $
-        Seq [
-            VarAssign "x" (Expr $ Lit $ Float 5)
-        ],
-        CallExpStmt $ CallFunc "f" []
-    ])
 
 --testAst :: Either String Env
 --testAst = --(filter (\(var, val) -> isVar val)) <$> varEnv <$> 

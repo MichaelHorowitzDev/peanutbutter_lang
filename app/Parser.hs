@@ -61,12 +61,31 @@ parsePrimary = space >> (parseString <&> Lit . String)
         expr <- parseExpression
         char ')'
         return expr)
+
+parseCallFunc :: Parser Exp
+parseCallFunc = do
+    primary <- parsePrimary
+    flattenedCalls primary
+    where
+        call :: Parser [Exp]
+        call = do
+            char '('
+            args <- parseArgs
+            char ')'
+            return args
+        parseArgs :: Parser [Exp]
+        parseArgs = (do
+            first <- try parseExp
+            rest <- many $ lexeme (char ',') >> parseExp
+            return (first:rest)) <|> return []
+        flattenedCalls :: Exp -> Parser Exp
+        flattenedCalls exp = (call >>= flattenedCalls . CallFunc exp) <|> return exp
         
 parseUnary :: Parser Exp
 parseUnary = do
     op <- try $ lexeme $ (char '-' $> Negate) <|> (char '!' $> Bang)
     op <$> parseUnary
-    <|> parsePrimary
+    <|> parseCallFunc
 
 parseFactor :: Parser Exp
 parseFactor = do
@@ -130,28 +149,11 @@ parseEquality = do
 parseExpression :: Parser Exp
 parseExpression = parseEquality
 
-parseExpStmt :: Parser ExpStmt
-parseExpStmt = try parseCallFunc <|> (Expr <$> parseExpression)
+parseExp :: Parser Exp
+parseExp = parseEquality
 
-parseCallFunc :: Parser ExpStmt
-parseCallFunc = do
-    iden <- lexeme parseIdentifier
-    char '('
-    (lexeme (char ')') >> return (CallFunc iden [])) 
-     <|> (do
-        args <- parseArgs
-        char ')'
-        return $ CallFunc iden args)
-    where
-        parseArgs :: Parser [ExpStmt]
-        parseArgs = do
-            first <- try parseExpStmt
-            rest <- many $ lexeme (char ',') >> parseExpStmt
-            return (first:rest)
-            
-parseCallExpStmt :: Parser Stmt
-parseCallExpStmt = try (CallExpStmt <$> parseCallFunc) 
-    <|> (CallExpStmt . Expr <$> parseExpression)
+parseCallExp :: Parser Stmt
+parseCallExp = CallExp <$> parseExpression
 
 parseVarAssign :: Parser Stmt
 parseVarAssign = do
@@ -161,7 +163,7 @@ parseVarAssign = do
     space
     char '=' <|> fail "no `=` found in variable assignment"
     space
-    VarAssign iden <$> parseExpStmt <|> fail "no right hand side of equation"
+    VarAssign iden <$> parseExp <|> fail "no right hand side of equation"
     
 guardError :: Bool -> String -> Parser ()
 guardError True s = fail s
@@ -172,20 +174,20 @@ parseVarReassign = do
     iden <- parseIdentifier
     guardError (iden == "var") "unexpected `var` keyword found in variable reassign"
     lexeme (char '=')
-    VarReassign iden <$> parseExpStmt
+    VarReassign iden <$> parseExp
     
 parseIf :: Parser Stmt
 parseIf = do
     lexeme (string "if") >> space1
-    expStmt <- lexeme parseExpStmt
+    expStmt <- lexeme parseExp
     stmts <- parseScope
     elses <- elseIfs
     If ((expStmt, stmts) : elses) <$> else'
     where
-        elseIfs :: Parser [(ExpStmt, Stmt)]
+        elseIfs :: Parser [(Exp, Stmt)]
         elseIfs = many $ do
             lexeme (string "else if") >> space1
-            expStmt <- lexeme parseExpStmt
+            expStmt <- lexeme parseExp
             stmts <- parseScope
             return (expStmt, stmts)
         else' :: Parser Stmt
@@ -196,7 +198,7 @@ parseIf = do
 parseWhile :: Parser Stmt
 parseWhile = do
     string "while"
-    expStmt <- lexeme parseExpStmt
+    expStmt <- lexeme parseExp
     While expStmt <$> parseScope
     
 parseScope :: Parser Stmt
@@ -226,28 +228,10 @@ parseFuncDef = do
             return (first:rest)
             
 parseReturnStmt :: Parser Stmt
-parseReturnStmt = (string "return" >> parseExpStmt) <&> ReturnStmt
+parseReturnStmt = (string "return" >> parseExp) <&> ReturnStmt
 
 parsePrint :: Parser Stmt
-parsePrint = (string "print" >> parseExpStmt) <&> Print
- 
---data Stmt = VarAssign String ExpStmt
---    | VarReassign String ExpStmt
---    | While ExpStmt Stmt
---    | Seq [Stmt]
---    | FuncDef String [String] Stmt
---    | ReturnStmt ExpStmt
---    | CallExpStmt ExpStmt
---    | Print ExpStmt
---    deriving Show
-
--- parseStmt' :: Parser Stmt
--- parseStmt' = do
---     stmt <- (parseVarAssign
---         <|> parseFuncDef
---         <|> parseCallExpStmt)
---     eof
---     return stmt
+parsePrint = (string "print" >> parseExp) <&> Print
 
 parseStmt :: Parser Stmt
 parseStmt = parseVarAssign
@@ -257,7 +241,7 @@ parseStmt = parseVarAssign
     <|> parsePrint 
     <|> parseReturnStmt 
     <|> try parseVarReassign
-    <|> parseCallExpStmt
+    <|> parseCallExp
 
 parseProgram :: Parser Stmt
 parseProgram = do
@@ -265,40 +249,11 @@ parseProgram = do
     space
     eof
     return (Seq stmts)
-    
---testVarAssign = "func cube(x) {\nreturn x * x * x\n}\nvar y = cube(x)"
---testCallFunc = "hello( )"
---testVarAssign = "var y = 5"
 
 testCallFunc = "var y = cube(x)"
 
 testThing = "func factorial(x) {\nvar total = 1\nwhile x > 1 {} }"
 
 testOtherThing = "while true { func fac() {} }"
-    
-
---parseExpStmt :
-
---parseStmt :: Parser Stmt
---pasre
 
 exampleText = "!=true"
-
---parseEquality :: Parser Exp
---parseEquality =
-
-
---parsePrimary :: Parser Primary
---parsePrimary = parseFloat <|> parseString <|> parseIdentifier
-
---parseToken :: Parser TokenType
---parseToken = do
---    space
---    (try parseFloat <|> parseSymbol <|> parseKeyword <|> parseString <|> parseIdentifier)
-    
---parsePrimary :: Parser Primary
---parsePrimary = do
---    (f) <- char (T.LEFT_BRACE)
---    return $ FLOAT 432.2
-    
---data Ast =
