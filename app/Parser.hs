@@ -58,7 +58,7 @@ parsePrimary = space >> (parseString <&> Lit . String)
     <|> (parseIdentifier <&> Var)
     <|> (do
         char '('
-        expr <- parseExpression
+        expr <- parseExp
         char ')'
         return expr)
 
@@ -146,14 +146,26 @@ parseEquality = do
             flattenedEquality (op e e1)
             <|> return e
 
-parseExpression :: Parser Exp
-parseExpression = parseEquality
+parseLambda :: Parser Exp
+parseLambda = (do
+    char '\\' <|> char 'λ'
+    params <- parseParams
+    space
+    string "->"
+    Lambda params <$> parseExp) <|> parseEquality
+    where
+        parseParams :: Parser [String]
+        parseParams = do
+            first <- space >> try parseIdentifier
+            try (do
+                rest <- try (many (space1 >> parseIdentifier))
+                return $ first:rest) <|> return [first]
 
 parseExp :: Parser Exp
-parseExp = parseEquality
+parseExp = parseLambda
 
 parseCallExp :: Parser Stmt
-parseCallExp = CallExp <$> parseExpression
+parseCallExp = CallExp <$> parseExp
 
 parseVarAssign :: Parser Stmt
 parseVarAssign = do

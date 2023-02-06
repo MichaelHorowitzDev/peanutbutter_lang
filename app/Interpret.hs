@@ -205,6 +205,9 @@ eval env (CallFunc exp args) = do
             val <- eval env x
             vals <- evalArgs env xs
             return (val:vals)
+eval env (Lambda params exp) = do
+    let function = Func params (ReturnStmt exp) env
+    return function
 eval _ (Lit n) = return n
 eval env (Var x) = except $ varLookup env x
 eval env (Add x y) = do

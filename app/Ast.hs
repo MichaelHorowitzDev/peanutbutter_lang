@@ -55,6 +55,7 @@ data Exp = Add Exp Exp
     | Negate Exp
     | Bang Exp
     | CallFunc Exp [Exp]
+    | Lambda [String] Exp
     | Lit Value
     | Var String
     deriving Show
