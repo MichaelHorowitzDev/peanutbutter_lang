@@ -210,6 +210,7 @@ parseIf = do
 parseWhile :: Parser Stmt
 parseWhile = do
     string "while"
+    space1
     expStmt <- lexeme parseExp
     While expStmt <$> parseScope
     
@@ -225,6 +226,7 @@ parseScope = do
 parseFuncDef :: Parser Stmt
 parseFuncDef = do
     string "func"
+    space1
     iden <- lexeme parseIdentifier
     char '('
     (lexeme (char ')') >> (FuncDef iden [] <$> parseScope))
@@ -240,10 +242,10 @@ parseFuncDef = do
             return (first:rest)
             
 parseReturnStmt :: Parser Stmt
-parseReturnStmt = (string "return" >> parseExp) <&> ReturnStmt
+parseReturnStmt = (string "return" >> space1 >> parseExp) <&> ReturnStmt
 
 parsePrint :: Parser Stmt
-parsePrint = (string "print" >> parseExp) <&> Print
+parsePrint = (string "print" >> space1 >> parseExp) <&> Print
 
 parseStmt :: Parser Stmt
 parseStmt = parseVarAssign
