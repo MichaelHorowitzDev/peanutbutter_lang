@@ -45,6 +45,12 @@ varLookup env var = do
         (Just Null) -> throwE $ ErrMsg $ "attempt to reference variable `" ++ var ++ "` before it was initialized"
         (Just x) -> return x
 
+member :: Eq a => a -> [(a, b)] -> Bool
+member a = foldr (\x acc -> a == fst x || acc) False
+
+inScope :: Var -> Env -> IO Bool
+inScope v (Env store _) = readIORef store >>= \store -> return $ member v store
+
 varAssign :: Env -> (Var, Value) -> IO Env
 varAssign (Env vStore prev) var = do
     modifyIORef vStore (var:)
@@ -289,6 +295,8 @@ initVars stmt = Seq $ map (`VarAssign` Lit Null) (getVarDecs stmt) ++ [stmt]
 
 exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp) = do
+    scoped <- lift (s `inScope` env)
+    except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
     value <- eval env exp
     lift $ varAssign env (s, value)
 exec env (VarReassign s exp) = do
@@ -309,9 +317,11 @@ exec env (If ((exp, stmt):xs) stmt') = do
         v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
 exec env (Seq []) = return env
 exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
-exec env (FuncDef s args stmt) =
+exec env (FuncDef s args stmt) = do
+    scoped <- lift (s `inScope` env)
+    except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
     let function = Func args (initVars stmt) env
-    in lift $ varAssign env (s, function)
+    lift $ varAssign env (s, function)
 exec env (CallExp exp) = case exp of
     (CallFunc name args) -> eval env exp >> return env
     _ -> eval env exp >> return env
