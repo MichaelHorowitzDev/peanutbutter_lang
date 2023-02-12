@@ -7,6 +7,7 @@ import Control.Monad
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.Class
 import Data.Maybe (fromJust)
+import Data.IORef
 
 type Prog = Stmt
 
@@ -14,8 +15,10 @@ data Exception = ErrMsg String
     | ReturnExcept Env Exp
     deriving Show
 
-newEnv :: Env
-newEnv = Env [] Nothing
+newEnv :: IO Env
+newEnv = do
+    x <- newIORef []
+    return $ Env x Nothing
 
 envDepth :: Env -> Int
 envDepth (Env _ prev) = case prev of
@@ -27,18 +30,25 @@ replaceEnvDepth _ 0 env = env
 replaceEnvDepth env@(Env store Nothing) _ _ = env
 replaceEnvDepth (Env store (Just prev)) x env = Env store (Just $ replaceEnvDepth prev (x-1) env)
 
-envLookup :: Env -> Var -> Maybe Value
-envLookup (Env store Nothing) var = lookup var store
-envLookup (Env store (Just prev)) var = case lookup var store of
-    (Just val) -> Just val
+envLookup :: Env -> Var -> IO (Maybe Value)
+envLookup (Env store Nothing) var = readIORef store >>= return . lookup var
+envLookup (Env store (Just prev)) var = readIORef store >>= \s -> case lookup var s of
+    (Just val) -> return $ Just val
     Nothing -> envLookup prev var
 
 
-varLookup :: Env -> Var -> Either Exception Value
-varLookup env var = maybeToEither (ErrMsg $ "unbound variable `" ++ var ++ "`") (envLookup env var)
+varLookup :: Env -> Var -> ExceptT Exception IO Value
+varLookup env var = do
+    result <- lift $ envLookup env var
+    case result of
+        Nothing -> throwE $ ErrMsg $ "unbound variable `" ++ var ++ "`"
+        (Just Null) -> throwE $ ErrMsg $ "attempt to reference variable `" ++ var ++ "` before it was initialized"
+        (Just x) -> return x
 
-varAssign :: Env -> (Var, Value) -> Env
-varAssign (Env vStore prev) var = Env (var : vStore) prev
+varAssign :: Env -> (Var, Value) -> IO Env
+varAssign (Env vStore prev) var = do
+    modifyIORef vStore (var:)
+    return $ Env vStore prev
 
 throwErrIf :: Bool -> String -> Either Exception ()
 throwErrIf bool msg = guardEither bool (ErrMsg msg)
@@ -46,29 +56,40 @@ throwErrIf bool msg = guardEither bool (ErrMsg msg)
 throwErr :: String -> Either Exception b
 throwErr msg = Left $ ErrMsg msg
 
-varReassign :: Env -> (Var, Value) -> Either Exception Env
-varReassign env@(Env vStore prev) pair@(var, val) = case replaceIfExists var vStore val of
-    (Just env') -> do
-        throwErrIf (envDepth env /= 0) "cannot reassign global variable"
-        return (Env env' prev)
-    Nothing -> throwErr $ "unbound variable `" ++ var ++ "`"
+varReassign :: Env -> (Var, Value) -> ExceptT Exception IO Env
+varReassign env@(Env vStore prev) pair@(var, val) = do
+    store <- lift $ readIORef vStore
+    case replaceIfExists var store val of
+        (Just env') -> do
+            except $ throwErrIf (envDepth env /= 0) "cannot reassign global variable"
+            lift $ modifyIORef vStore (const env')
+            return (Env vStore prev)
+        Nothing -> except $ throwErr $ "unbound variable `" ++ var ++ "`"
 
-addScope :: Env -> Env
-addScope env = Env [] (Just env)
+addScope :: Env -> IO Env
+addScope env = do
+    x <- newIORef []
+    return $ Env x (Just env)
 
-addVarScope :: Env -> [(Var, Value)] -> Env
-addVarScope env vStore = Env vStore (Just env)
+addVarScope :: Env -> [(Var, Value)] -> IO Env
+addVarScope env vStore = do
+    var <- newIORef vStore
+    return $ Env var (Just env)
 
 removeScope :: Env -> Maybe Env
 removeScope (Env _ prev) = prev
 
-replaceVarEnv :: Env -> [(Var, Value)] -> Env
-replaceVarEnv (Env _ prev) vStore = Env vStore prev
+replaceVarEnv :: Env -> [(Var, Value)] -> IO Env
+replaceVarEnv (Env _ prev) vStore = do
+    var <- newIORef vStore
+    return $ Env var prev
 
-funcLookup :: Env -> Var -> Either Exception Function
-funcLookup env var = case envLookup env var of
-    (Just (Func params stmts funcEnv)) -> Right $ Function params stmts funcEnv
-    _ -> Left $ ErrMsg $ "no function with name " ++ var ++ " found"
+funcLookup :: Env -> Var -> ExceptT Exception IO Function
+funcLookup env var = do
+    result <- lift $ envLookup env var 
+    case result of
+        (Just (Func params stmts funcEnv)) -> return $ Function params stmts funcEnv
+        Nothing -> throwE $ ErrMsg $ "no function with name " ++ var ++ " found"
 
 guardEither :: Bool -> a -> Either a ()
 guardEither False a = Left a
@@ -82,7 +103,7 @@ funcCall env@(Env store prev) function args = do
     let (Function params stmts funcEnv) = function
     except $ testArity params args
     let vars = zip params args
-    let env' = addVarScope funcEnv vars
+    env' <- lift $ addVarScope funcEnv vars
     ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
             Right env'' -> return $ Right Null
             Left (ReturnExcept env'' expStmt) -> runExceptT $ do
@@ -209,7 +230,7 @@ eval env (Lambda params exp) = do
     let function = Func params (ReturnStmt exp) env
     return function
 eval _ (Lit n) = return n
-eval env (Var x) = except $ varLookup env x
+eval env (Var x) = varLookup env x
 eval env (Add x y) = do
     v1 <- eval env x
     v2 <- eval env y
@@ -257,13 +278,22 @@ eval env (Bang x) = do
     v1 <- eval env x
     except $ bang v1
 
+getVarDecs :: Stmt -> [Var]
+getVarDecs (VarAssign s _) = [s]
+getVarDecs (Seq []) = []
+getVarDecs (Seq (x:xs)) = getVarDecs x ++ getVarDecs (Seq xs)
+getVarDecs _ = []
+
+initVars :: Stmt -> Stmt
+initVars stmt = Seq $ map (`VarAssign` Lit Null) (getVarDecs stmt) ++ [stmt]
+
 exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp) = do
     value <- eval env exp
-    return $ varAssign env (s, value)
+    lift $ varAssign env (s, value)
 exec env (VarReassign s exp) = do
     value <- eval env exp
-    except $ varReassign env (s, value)
+    varReassign env (s, value)
 exec env (While exp stmt) = do
     value <- eval env exp
     case value of
@@ -280,8 +310,8 @@ exec env (If ((exp, stmt):xs) stmt') = do
 exec env (Seq []) = return env
 exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
 exec env (FuncDef s args stmt) =
-    let function = Func args stmt env
-    in return $ varAssign env (s, function)
+    let function = Func args (initVars stmt) env
+    in lift $ varAssign env (s, function)
 exec env (CallExp exp) = case exp of
     (CallFunc name args) -> eval env exp >> return env
     _ -> eval env exp >> return env
@@ -300,39 +330,8 @@ runProgram env stmt = do
         Left (ErrMsg msg) -> putStrLn msg
 
 execNew :: Stmt -> IO ()
-execNew stmt = runProgram newEnv stmt
+execNew stmt = newEnv >>= \env -> runProgram env stmt
 
 isVar :: Value -> Bool
 isVar Func {} = False
 isVar _ = True
-
---testAst :: Either String Env
---testAst = --(filter (\(var, val) -> isVar val)) <$> varEnv <$> 
---  (execNew (
---    Seq [
-----        VarAssign "x" (Expr $ Lit $ Num 5), 
-----        VarReassign "x" (Expr $ Lit $ Bool True),
---        FuncDef "makeCounter" [] (Seq [
-----            VarAssign "i" (Expr $ Lit $ Num 0),
---            FuncDef "count" [] (Seq [
-----                VarReassign "i" (Expr $ Add (Var "i") (Lit $ Num 1)),
-----                VarReassign "x" (Expr $ Add (Var "x") (Var "i"))
---            ]),
-----            CallExpStmt $ CallFunc "count" [],
-----            VarAssign "y" (Expr $ Var "count"),
---            ReturnStmt (Expr $ Var "count")
---        ]),
---        VarAssign "y" (CallFunc "makeCounter" []) --[Expr $ Lit $ Num 3]),
-----        CallExpStmt (CallFunc "y" [])
---        -- VarAssign "counter" (CallProc "makeCounter" [])
---        -- ProcDef "function" [] (Seq [
---        --     VarReassign "x" (Expr $ Lit $ Bool False),
---        --     VarAssign "x" (Expr $ Lit $ Float 63.2),
---        --     VarAssign "y" (Expr $ Lit $ Float 5.52),
---        --     ReturnStmt (Expr $ Lit $ Float 4.3)
---        -- ]),
---        -- VarAssign "return" (CallProc "function" [])
---        
---        ]
---    ))
-

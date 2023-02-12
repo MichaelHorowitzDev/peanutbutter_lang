@@ -8,14 +8,19 @@ module Ast (
   Var
 ) where
   
+import Data.IORef
+import System.IO.Unsafe
   
 type Var = String
 
 data Env = Env {
-    varEnv :: [(Var, Value)],
+    varEnv :: IORef [(Var, Value)],
     prevEnv :: Maybe Env
 }
     deriving Show
+
+instance (Show a) => Show (IORef a) where
+    show a = show (unsafePerformIO (readIORef a))
     
 data Function = Function {
   funcParams :: [String],
