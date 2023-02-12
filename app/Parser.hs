@@ -158,7 +158,7 @@ parseLambda = (do
         parseParams = do
             first <- space >> try parseIdentifier
             try (do
-                rest <- try (many (space1 >> parseIdentifier))
+                rest <- many (try $ space1 >> parseIdentifier)
                 return $ first:rest) <|> return [first]
 
 parseExp :: Parser Exp
