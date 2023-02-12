@@ -46,7 +46,10 @@ parseString :: Parser String
 parseString = char '\"' *> manyTill L.charLiteral (char '\"')
 
 parseIdentifier :: Parser String
-parseIdentifier = some letterChar
+parseIdentifier = do
+    first <- letterChar 
+    rest <- many (letterChar <|> digitChar <|> char '_')
+    return (first:rest)
 
 parseBool :: Parser Bool
 parseBool = (string "true" >> return True) <|> (string "false" >> return False)
