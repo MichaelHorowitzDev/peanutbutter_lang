@@ -51,7 +51,7 @@ varAssign (Env vStore prev) var = do
     return $ Env vStore prev
 
 throwErrIf :: Bool -> String -> Either Exception ()
-throwErrIf bool msg = guardEither bool (ErrMsg msg)
+throwErrIf bool msg = guardEither (not bool) (ErrMsg msg)
 
 throwErr :: String -> Either Exception b
 throwErr msg = Left $ ErrMsg msg
@@ -61,7 +61,7 @@ varReassign env@(Env vStore prev) pair@(var, val) = do
     store <- lift $ readIORef vStore
     case replaceIfExists var store val of
         (Just env') -> do
-            except $ throwErrIf (envDepth env /= 0) "cannot reassign global variable"
+            except $ throwErrIf (envDepth env == 0) "cannot reassign global variable"
             lift $ modifyIORef vStore (const env')
             return (Env vStore prev)
         Nothing -> except $ throwErr $ "unbound variable `" ++ var ++ "`"
