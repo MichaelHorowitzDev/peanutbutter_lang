@@ -1,6 +1,7 @@
 module Ast (
   Function (..),
   Value (..),
+  isNull,
   valueTypeLookup,
   Exp (..),
   Stmt (..),
@@ -50,6 +51,10 @@ data Value = Int Int
     | Func [String] Stmt Env
     | Null
     deriving Show
+
+isNull :: Value -> Bool
+isNull Null = True
+isNull _ = False
 
 data Exp = Add Exp Exp
     | Sub Exp Exp

@@ -49,7 +49,11 @@ member :: Eq a => a -> [(a, b)] -> Bool
 member a = foldr (\x acc -> a == fst x || acc) False
 
 inScope :: Var -> Env -> IO Bool
-inScope v (Env store _) = readIORef store >>= \store -> return $ member v store
+inScope v (Env store _) = do
+    store <- readIORef store
+    case lookup v store of
+        (Just val) -> return $ not $ isNull (value val)
+        Nothing -> return False
 
 varAssign :: Env -> (Var, Value) -> IO Env
 varAssign (Env vStore prev) (var, val) = do
@@ -316,6 +320,20 @@ getVarDecs _ = []
 initVars :: Stmt -> Stmt
 initVars stmt = Seq $ map (`VarAssign` Lit Null) (getVarDecs stmt) ++ [stmt]
 
+moveFuncDecs :: Stmt -> Stmt
+moveFuncDecs stmt =
+    let (funcs, rest) = partition stmt
+    in Seq $ funcs ++ rest
+    where
+        partition :: Stmt -> ([Stmt], [Stmt])
+        partition func@(FuncDef {}) = ([func], [])
+        partition (Seq []) = ([], [])
+        partition (Seq (x:xs)) =
+            let (funcs, rest) = partition x
+                (funcs', rest') = partition (Seq xs)
+            in (funcs ++ funcs', rest ++ rest')
+        partition stmt = ([], [stmt])
+
 exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp) = do
     scoped <- lift (s `inScope` env)
@@ -348,7 +366,9 @@ exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
 exec env (FuncDef s args stmt) = do
     scoped <- lift (s `inScope` env)
     except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
-    let function = Func args (initVars stmt) env
+    let movedDecs = moveFuncDecs stmt
+    let varInits = initVars movedDecs
+    let function = Func args varInits env
     lift $ varAssign env (s, function)
 exec env (CallExp exp) = case exp of
     (CallFunc name args) -> eval env exp >> return env
@@ -359,9 +379,13 @@ exec env (Print expStmt) = do
     lift (printVal val)
     return env
 
+performTransformations :: Stmt -> Stmt
+performTransformations = initVars . moveFuncDecs
+
 runProgram :: Env -> Stmt -> IO ()
 runProgram env stmt = do
-    result <- runExceptT $ exec env stmt
+    let transformed = performTransformations stmt
+    result <- runExceptT $ exec env transformed
     case result of
         Right _ -> return ()
         Left (ReturnExcept _ _) -> putStrLn "unexpected return statement not nested in function"
