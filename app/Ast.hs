@@ -5,6 +5,7 @@ module Ast (
   Exp (..),
   Stmt (..),
   Env (..),
+  Val (..),
   Var
 ) where
   
@@ -13,8 +14,10 @@ import System.IO.Unsafe
   
 type Var = String
 
+data Val = Val { value :: Value, mutable :: Bool } deriving Show
+
 data Env = Env {
-    varEnv :: IORef [(Var, Value)],
+    varEnv :: IORef [(Var, Val)],
     prevEnv :: Maybe Env
 }
     deriving Show
@@ -30,6 +33,7 @@ data Function = Function {
 
 data Stmt = VarAssign String Exp
     | VarReassign String Exp
+    | LetAssign String Exp
     | While Exp Stmt
     | If [(Exp, Stmt)] Stmt
     | Seq [Stmt]

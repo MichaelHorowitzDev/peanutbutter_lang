@@ -30,7 +30,7 @@ replaceEnvDepth _ 0 env = env
 replaceEnvDepth env@(Env store Nothing) _ _ = env
 replaceEnvDepth (Env store (Just prev)) x env = Env store (Just $ replaceEnvDepth prev (x-1) env)
 
-envLookup :: Env -> Var -> IO (Maybe Value)
+envLookup :: Env -> Var -> IO (Maybe Val)
 envLookup (Env store Nothing) var = readIORef store >>= return . lookup var
 envLookup (Env store (Just prev)) var = readIORef store >>= \s -> case lookup var s of
     (Just val) -> return $ Just val
@@ -40,7 +40,7 @@ envLookup (Env store (Just prev)) var = readIORef store >>= \s -> case lookup va
 varLookup :: Env -> Var -> ExceptT Exception IO Value
 varLookup env var = do
     result <- lift $ envLookup env var
-    case result of
+    case value <$> result of
         Nothing -> throwE $ ErrMsg $ "unbound variable `" ++ var ++ "`"
         (Just Null) -> throwE $ ErrMsg $ "attempt to reference variable `" ++ var ++ "` before it was initialized"
         (Just x) -> return x
@@ -52,8 +52,15 @@ inScope :: Var -> Env -> IO Bool
 inScope v (Env store _) = readIORef store >>= \store -> return $ member v store
 
 varAssign :: Env -> (Var, Value) -> IO Env
-varAssign (Env vStore prev) var = do
-    modifyIORef vStore (var:)
+varAssign (Env vStore prev) (var, val) = do
+    let value = Val {value=val, mutable=True}
+    modifyIORef vStore ((var, value):)
+    return $ Env vStore prev
+
+letAssign :: Env -> (Var, Value) -> IO Env
+letAssign (Env vStore prev) (var, val) = do
+    let value = Val {value=val, mutable=False}
+    modifyIORef vStore ((var, value):)
     return $ Env vStore prev
 
 throwErrIf :: Bool -> String -> Either Exception ()
@@ -64,36 +71,52 @@ throwErr msg = Left $ ErrMsg msg
 
 varReassign :: Env -> (Var, Value) -> ExceptT Exception IO Env
 varReassign env@(Env vStore prev) pair@(var, val) = do
-    store <- lift $ readIORef vStore
-    case replaceIfExists var store val of
-        (Just env') -> do
-            except $ throwErrIf (envDepth env == 0) "cannot reassign global variable"
-            lift $ modifyIORef vStore (const env')
-            return (Env vStore prev)
-        Nothing -> except $ throwErr $ "unbound variable `" ++ var ++ "`"
+    result <- lift $ envLookup env var
+    case result of
+        Nothing -> throwE $ ErrMsg $ "unbound variable `" ++ var ++ "`"
+        (Just val) -> do
+            except $ throwErrIf (not $ mutable val) "cannot reassign immutable value"
+            case value val of
+                Null -> throwE $ ErrMsg $ "attempt to reference variable `" ++ var ++ "` before it was initialized"
+
+    where
+        reassign :: Env -> (Var, Value) -> IO Env
+        reassign env@(Env vStore prev) (var, val) = do
+            store <- readIORef vStore
+            case replaceIfExists var store (mutableVar val) of
+                (Just new) -> do
+                    writeIORef vStore new
+                    return (Env vStore prev)
+                Nothing -> case prev of
+                    Nothing -> return env
+                    (Just env') -> do
+                        env'' <- reassign env' (var, val)
+                        return (Env vStore (Just env''))
 
 addScope :: Env -> IO Env
 addScope env = do
     x <- newIORef []
     return $ Env x (Just env)
 
-addVarScope :: Env -> [(Var, Value)] -> IO Env
-addVarScope env vStore = do
-    var <- newIORef vStore
-    return $ Env var (Just env)
+immutableVar :: Value -> Val
+immutableVar v = Val {value=v, mutable=False}
+
+mutableVar :: Value -> Val
+mutableVar v = Val {value=v, mutable=True}
+
+addConstScope :: Env -> [(Var, Value)] -> IO Env
+addConstScope env store = do
+    let consts = map (\(x, y) -> (x, immutableVar y)) store
+    vars <- newIORef consts
+    return $ Env vars (Just env)
 
 removeScope :: Env -> Maybe Env
 removeScope (Env _ prev) = prev
 
-replaceVarEnv :: Env -> [(Var, Value)] -> IO Env
-replaceVarEnv (Env _ prev) vStore = do
-    var <- newIORef vStore
-    return $ Env var prev
-
 funcLookup :: Env -> Var -> ExceptT Exception IO Function
 funcLookup env var = do
     result <- lift $ envLookup env var 
-    case result of
+    case value <$> result of
         (Just (Func params stmts funcEnv)) -> return $ Function params stmts funcEnv
         Nothing -> throwE $ ErrMsg $ "no function with name " ++ var ++ " found"
 
@@ -109,7 +132,7 @@ funcCall env@(Env store prev) function args = do
     let (Function params stmts funcEnv) = function
     except $ testArity params args
     let vars = zip params args
-    env' <- lift $ addVarScope funcEnv vars
+    env' <- lift $ addConstScope funcEnv vars
     ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
             Right env'' -> return $ Right Null
             Left (ReturnExcept env'' expStmt) -> runExceptT $ do
@@ -299,6 +322,11 @@ exec env (VarAssign s exp) = do
     except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
     value <- eval env exp
     lift $ varAssign env (s, value)
+exec env (LetAssign s exp) = do
+    scoped <- lift (s `inScope` env)
+    except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
+    value <- eval env exp
+    lift $ letAssign env (s, value)
 exec env (VarReassign s exp) = do
     value <- eval env exp
     varReassign env (s, value)

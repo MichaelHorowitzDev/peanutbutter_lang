@@ -179,6 +179,16 @@ parseVarAssign = do
     char '=' <|> fail "no `=` found in variable assignment"
     space
     VarAssign iden <$> parseExp <|> fail "no right hand side of equation"
+
+parseLetAssign :: Parser Stmt
+parseLetAssign = do
+    string "let"
+    space1 <|> fail "expected assignment"
+    iden <- parseIdentifier <|> fail "no valid identifier found"
+    space
+    char '=' <|> fail "no `=` found in variable assignment"
+    space
+    LetAssign iden <$> parseExp <|> fail "no right hand side of equation"
     
 guardError :: Bool -> String -> Parser ()
 guardError True s = fail s
@@ -252,6 +262,7 @@ parsePrint = (string "print" >> space1 >> parseExp) <&> Print
 
 parseStmt :: Parser Stmt
 parseStmt = parseVarAssign
+    <|> parseLetAssign
     <|> parseWhile 
     <|> parseFuncDef
     <|> parseIf
