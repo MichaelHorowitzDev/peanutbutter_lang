@@ -139,10 +139,8 @@ funcCall env@(Env store prev) function args = do
     env' <- lift $ addConstScope funcEnv vars
     ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
             Right env'' -> return $ Right Null
-            Left (ReturnExcept env'' expStmt) -> runExceptT $ do
-                val <- eval env'' expStmt
-                return val
-            Left a@(_) -> return $ Left a
+            Left (ReturnExcept env'' expStmt) -> runExceptT $ eval env'' expStmt
+            Left a -> return $ Left a
     where
         testArity :: [String] -> [Value] -> Either Exception ()
         testArity xs ys = guardEither (params == args)
