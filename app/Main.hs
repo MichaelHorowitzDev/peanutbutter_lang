@@ -16,6 +16,6 @@ main = do
     case thingToDo of
         "1" -> parseTest parseProgram text
         "2" -> case parse parseProgram "error" text of
-            Left err -> putStrLn "error parsing program"
-            Right stmt -> (execNew stmt)
+            Left err -> putStrLn $ errorBundlePretty err
+            Right stmt -> execNew stmt
     
