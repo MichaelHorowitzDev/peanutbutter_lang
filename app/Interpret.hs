@@ -40,10 +40,18 @@ envLookup (Env store (Just prev)) var = readIORef store >>= \s -> case lookup va
 varLookup :: Env -> Var -> ExceptT Exception IO Value
 varLookup env var = do
     result <- lift $ envLookup env var
-    case value <$> result of
-        Nothing -> throwE $ ErrMsg $ "unbound variable `" ++ var ++ "`"
-        (Just Null) -> throwE $ ErrMsg $ "attempt to reference variable `" ++ var ++ "` before it was initialized"
-        (Just x) -> return x
+    val <- except $ maybeToEither (ErrMsg unboundErr) result
+    except $ throwErrIf (isNull $ value val) initErr
+
+    scoped <- lift $ var `inScope` env
+    except $ throwErrIf (not scoped && mutable val) refMutErr
+    
+    return $ value val
+
+    where
+        unboundErr = "unbound variable `" ++ var ++ "`"
+        initErr = "attempt to reference variable `" ++ var ++ "` before it was initialized"
+        refMutErr = "cannot reference mutable variable `" ++ var ++ "` declared in outer scope"
 
 member :: Eq a => a -> [(a, b)] -> Bool
 member a = foldr (\x acc -> a == fst x || acc) False
@@ -309,14 +317,15 @@ eval env (Bang x) = do
     v1 <- eval env x
     except $ bang v1
 
-getVarDecs :: Stmt -> [Var]
-getVarDecs (VarAssign s _) = [s]
-getVarDecs (Seq []) = []
-getVarDecs (Seq (x:xs)) = getVarDecs x ++ getVarDecs (Seq xs)
-getVarDecs _ = []
-
 initVars :: Stmt -> Stmt
-initVars stmt = Seq $ map (`VarAssign` Lit Null) (getVarDecs stmt) ++ [stmt]
+initVars stmt = Seq (getDecs stmt ++ [stmt])
+    where
+        getDecs :: Stmt -> [Stmt]
+        getDecs (VarAssign s _) = [VarAssign s (Lit Null)]
+        getDecs (LetAssign s _) = [LetAssign s (Lit Null)]
+        getDecs (Seq []) = []
+        getDecs (Seq (x:xs)) = getDecs x ++ getDecs (Seq xs)
+        getDecs _ = []
 
 moveFuncDecs :: Stmt -> Stmt
 moveFuncDecs stmt =
