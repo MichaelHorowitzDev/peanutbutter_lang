@@ -377,7 +377,7 @@ exec env (FuncDef s args stmt) = do
     let movedDecs = moveFuncDecs stmt
     let varInits = initVars movedDecs
     let function = Func args varInits env
-    lift $ varAssign env (s, function)
+    lift $ letAssign env (s, function)
 exec env (CallExp exp) = case exp of
     (CallFunc name args) -> eval env exp >> return env
     _ -> eval env exp >> return env
