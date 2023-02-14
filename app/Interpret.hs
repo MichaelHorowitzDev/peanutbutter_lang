@@ -90,6 +90,7 @@ varReassign env@(Env vStore prev) pair@(var, val) = do
             except $ throwErrIf (not $ mutable val) "cannot reassign immutable value"
             case value val of
                 Null -> throwE $ ErrMsg $ "attempt to reference variable `" ++ var ++ "` before it was initialized"
+                _ -> lift $ reassign env pair
 
     where
         reassign :: Env -> (Var, Value) -> IO Env
