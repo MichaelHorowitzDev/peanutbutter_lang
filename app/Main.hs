@@ -5,7 +5,7 @@ import System.IO (openFile, IOMode (ReadMode), hGetContents)
 import Interpret
 import Parser
 import Ast
-import Text.Megaparsec (parseTest, parse)
+import Text.Megaparsec (parseTest, parse, errorBundlePretty)
 
 main :: IO ()
 main = do
