@@ -22,16 +22,6 @@ newEnv = do
     x <- newIORef []
     return $ Env x Nothing
 
-envDepth :: Env -> Int
-envDepth (Env _ prev) = case prev of
-  Nothing -> 0
-  Just env -> 1 + envDepth env
-
-replaceEnvDepth :: Env -> Int -> Env -> Env
-replaceEnvDepth _ 0 env = env
-replaceEnvDepth env@(Env store Nothing) _ _ = env
-replaceEnvDepth (Env store (Just prev)) x env = Env store (Just $ replaceEnvDepth prev (x-1) env)
-
 envLookup :: Env -> Var -> IO (Maybe Val)
 envLookup (Env store Nothing) var = readIORef store >>= return . lookup var
 envLookup (Env store (Just prev)) var = readIORef store >>= \s -> case lookup var s of
@@ -121,9 +111,6 @@ removeScope (Env _ prev) = prev
 guardEither :: Bool -> a -> Either a ()
 guardEither False a = Left a
 guardEither True _ = return ()
-
-fixDepth :: Env -> Env -> Env
-fixDepth env env' = replaceEnvDepth env (envDepth env - envDepth env') env'
 
 funcCall :: Env -> Function -> [Value] -> Position -> ExceptT Exception IO Value
 funcCall env@(Env store prev) function args pos = do
