@@ -310,7 +310,7 @@ parseStmt = do
 
 parseProgram :: Parser Stmt
 parseProgram = do
-    stmts <- many (space >> parseStmt)
+    stmts <- many (parseStmt >>= \stmt -> space >> return stmt)
     offset <- getOffset
     src <- getSourcePos
     space
