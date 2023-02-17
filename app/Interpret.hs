@@ -8,11 +8,13 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Class
 import Data.Maybe (fromJust)
 import Data.IORef
+import Text.Megaparsec
 
 type Prog = Stmt
 
 data Exception = ErrMsg String
     | ReturnExcept Env Exp
+    | InterpErr InterpretError
     deriving Show
 
 newEnv :: IO Env
@@ -36,22 +38,16 @@ envLookup (Env store (Just prev)) var = readIORef store >>= \s -> case lookup va
     (Just val) -> return $ Just val
     Nothing -> envLookup prev var
 
-
-varLookup :: Env -> Var -> ExceptT Exception IO Value
-varLookup env var = do
+varLookup :: Env -> Var -> Position -> ExceptT Exception IO Value
+varLookup env var offset = do
     result <- lift $ envLookup env var
-    val <- except $ maybeToEither (ErrMsg unboundErr) result
-    except $ throwErrIf (isNull $ value val) initErr
+    val <- except $ maybeToEither (throwWithOffset offset (UnboundErr var)) result
+    except $ throwErrIf' (isNull $ value val) (InterpretError (RefBeforeInit var) offset)
 
     scoped <- lift $ var `inScope` env
-    except $ throwErrIf (not scoped && mutable val) refMutErr
+    except $ throwErrIf' (not scoped && mutable val) (InterpretError (RefMutVar var) offset)
     
     return $ value val
-
-    where
-        unboundErr = "unbound variable `" ++ var ++ "`"
-        initErr = "attempt to reference variable `" ++ var ++ "` before it was initialized"
-        refMutErr = "cannot reference mutable variable `" ++ var ++ "` declared in outer scope"
 
 member :: Eq a => a -> [(a, b)] -> Bool
 member a = foldr (\x acc -> a == fst x || acc) False
@@ -63,14 +59,14 @@ inScope v (Env store _) = do
         (Just val) -> return $ not $ isNull (value val)
         Nothing -> return False
 
-varAssign :: Env -> (Var, Value) -> IO Env
-varAssign (Env vStore prev) (var, val) = do
+addVar :: Env -> (Var, Value) -> IO Env
+addVar (Env vStore prev) (var, val) = do
     let value = Val {value=val, mutable=True}
     modifyIORef vStore ((var, value):)
     return $ Env vStore prev
 
-letAssign :: Env -> (Var, Value) -> IO Env
-letAssign (Env vStore prev) (var, val) = do
+addLet :: Env -> (Var, Value) -> IO Env
+addLet (Env vStore prev) (var, val) = do
     let value = Val {value=val, mutable=False}
     modifyIORef vStore ((var, value):)
     return $ Env vStore prev
@@ -81,17 +77,13 @@ throwErrIf bool msg = guardEither (not bool) (ErrMsg msg)
 throwErr :: String -> Either Exception b
 throwErr msg = Left $ ErrMsg msg
 
-varReassign :: Env -> (Var, Value) -> ExceptT Exception IO Env
-varReassign env@(Env vStore prev) pair@(var, val) = do
+varReassign :: Env -> (Var, Value) -> Position -> ExceptT Exception IO Env
+varReassign env@(Env vStore prev) pair@(var, val) pos = do
     result <- lift $ envLookup env var
-    case result of
-        Nothing -> throwE $ ErrMsg $ "unbound variable `" ++ var ++ "`"
-        (Just val) -> do
-            except $ throwErrIf (not $ mutable val) "cannot reassign immutable value"
-            case value val of
-                Null -> throwE $ ErrMsg $ "attempt to reference variable `" ++ var ++ "` before it was initialized"
-                _ -> lift $ reassign env pair
-
+    val <- except $ maybeToEither (throwWithOffset pos (UnboundErr var)) result
+    except $ guardEither (mutable val) (throwWithOffset pos (ReassignImmutableErr var))
+    except $ guardEither (not $ isNull (value val)) (throwWithOffset pos (RefBeforeInit var))
+    lift $ reassign env pair
     where
         reassign :: Env -> (Var, Value) -> IO Env
         reassign env@(Env vStore prev) (var, val) = do
@@ -126,13 +118,6 @@ addConstScope env store = do
 removeScope :: Env -> Maybe Env
 removeScope (Env _ prev) = prev
 
-funcLookup :: Env -> Var -> ExceptT Exception IO Function
-funcLookup env var = do
-    result <- lift $ envLookup env var 
-    case value <$> result of
-        (Just (Func params stmts funcEnv)) -> return $ Function params stmts funcEnv
-        Nothing -> throwE $ ErrMsg $ "no function with name " ++ var ++ " found"
-
 guardEither :: Bool -> a -> Either a ()
 guardEither False a = Left a
 guardEither True _ = return ()
@@ -140,8 +125,8 @@ guardEither True _ = return ()
 fixDepth :: Env -> Env -> Env
 fixDepth env env' = replaceEnvDepth env (envDepth env - envDepth env') env'
 
-funcCall :: Env -> Function -> [Value] -> ExceptT Exception IO Value
-funcCall env@(Env store prev) function args = do
+funcCall :: Env -> Function -> [Value] -> Position -> ExceptT Exception IO Value
+funcCall env@(Env store prev) function args pos = do
     let (Function params stmts funcEnv) = function
     except $ testArity params args
     let vars = zip params args
@@ -153,8 +138,7 @@ funcCall env@(Env store prev) function args = do
     where
         testArity :: [String] -> [Value] -> Either Exception ()
         testArity xs ys = guardEither (params == args)
-            (ErrMsg $ "incorrect number of arguments passed to function" ++
-            "\n" ++ show params ++ " parameters expected but " ++ show args ++ " arguments passed in")
+            (throwWithOffset pos (ArityErr params args))
             where
                 params = length xs
                 args = length ys
@@ -165,83 +149,78 @@ replaceIfExists key (x:xs) value
     | key == fst x = Just $ (key, value) : xs
     | otherwise = (x :) <$> replaceIfExists key xs value
 
-genericTypeException :: String -> String -> String
-genericTypeException x y =
-    "cannot use value of type `" ++ x ++ "` where value of type `" ++ y ++ "` was expected"
+add :: Value -> Value -> Position -> Either Exception Value
+add x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Int (x + y)
+    (Float x, Float y) -> return $ Float (x + y)
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "add" x y)
 
-operationTypeError :: String -> Value -> Value -> Either Exception b
-operationTypeError op x y =
-    let v1 = valueTypeLookup x
-        v2 = valueTypeLookup y
-    in Left $ ErrMsg $ "cannot " ++ op ++ " values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+sub :: Value -> Value -> Position -> Either Exception Value
+sub x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Int (x - y)
+    (Float x, Float y) -> return $ Float (x - y)
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "subtract" x y)
 
-operationTypeErrorSingle :: String -> Value -> Either Exception b
-operationTypeErrorSingle op x =
-    let v1 = valueTypeLookup x
-    in Left $ ErrMsg $ "cannot " ++ op ++ " value of type `" ++ v1 ++ "`"
+mul :: Value -> Value -> Position -> Either Exception Value
+mul (Int x) (Int y) pos = Right $ Int (x * y)
+mul (Float x) (Float y) pos = Right $ Float (x * y)
+mul x y pos = Left $ throwWithOffset pos (binOpTypeErr "multiply" x y)
 
-add :: Value -> Value -> Either Exception Value
-add (Int x) (Int y) = Right $ Int (x + y)
-add (Float x) (Float y) = Right $ Float (x + y)
-add x y = operationTypeError "add" x y
+divide :: Value -> Value -> Position -> Either Exception Value
+divide x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Int (x `div` y)
+    (Float x, Float y) -> return $ Float (x / y)
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "divide" x y)
 
-sub :: Value -> Value -> Either Exception Value
-sub (Int x) (Int y) = Right $ Int (x - y)
-sub (Float x) (Float y) = Right $ Float (x - y)
-sub x y = operationTypeError "subtract" x y
+greater :: Value -> Value -> Position -> Either Exception Value
+greater (Int x) (Int y) pos = return $ Bool $ x > y
+greater (Float x) (Float y) pos = return $ Bool $ x > y
+greater x y pos = Left $ throwWithOffset pos (binOpTypeErr "compare" x y)
 
-mul :: Value -> Value -> Either Exception Value
-mul (Int x) (Int y) = Right $ Int (x * y)
-mul (Float x) (Float y) = Right $ Float (x * y)
-mul x y = operationTypeError "multiply" x y
+greaterEqual :: Value -> Value -> Position -> Either Exception Value
+greaterEqual x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Bool $ x >= y
+    (Float x, Float y) -> return $ Bool $ x >= y
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "compare" x y)
 
-divide :: Value -> Value -> Either Exception Value
-divide (Int x) (Int y) = Right $ Int (x `div` y)
-divide (Float x) (Float y) = Right $ Float (x / y)
-divide x y = operationTypeError "divide" x y
+lesser :: Value -> Value -> Position -> Either Exception Value
+lesser x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Bool $ x < y
+    (Float x, Float y) -> return $ Bool $ x < y
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "compare" x y)
 
-greater :: Value -> Value -> Either Exception Value
-greater (Int x) (Int y) = return $ Bool $ x > y
-greater (Float x) (Float y) = return $ Bool $ x > y
-greater x y = operationTypeError "compare" x y
+lesserEqual :: Value -> Value -> Position -> Either Exception Value
+lesserEqual x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Bool $ x <= y
+    (Float x, Float y) -> return $ Bool $ x <= y
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "compare" x y)
 
-greaterEqual :: Value -> Value -> Either Exception Value
-greaterEqual (Int x) (Int y) = return $ Bool $ x >= y
-greaterEqual (Float x) (Float y) = return $ Bool $ x >= y
-greaterEqual x y = operationTypeError "compare" x y
+equal :: Value -> Value -> Position -> Either Exception Value
+equal x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Bool $ x == y 
+    (Float x, Float y) -> return $ Bool $ x == y
+    (String x, String y) -> return $ Bool $ x == y
+    (Bool x, Bool y) -> return $ Bool $ x == y
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "compare" x y)
 
-lesser :: Value -> Value -> Either Exception Value
-lesser (Int x) (Int y) = return $ Bool $ x < y
-lesser (Float x) (Float y) = return $ Bool $ x < y
-lesser x y = operationTypeError "compare" x y
+notEqual :: Value -> Value -> Position -> Either Exception Value
+notEqual x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Bool $ x /= y
+    (Float x, Float y) -> return $ Bool $ x /= y
+    (String x, String y) -> return $ Bool $ x /= y
+    (Bool x, Bool y) -> return $ Bool $ x /= y
+    _ -> Left $ throwWithOffset pos (binOpTypeErr "compare" x y)
 
-lesserEqual :: Value -> Value -> Either Exception Value
-lesserEqual (Int x) (Int y) = return $ Bool $ x <= y
-lesserEqual (Float x) (Float y) = return $ Bool $ x <= y
-lesserEqual x y = operationTypeError "compare" x y
+negateVal :: Value -> Position -> Either Exception Value
+negateVal x pos = case x of
+    (Int x) -> return $ Int (negate x)
+    (Float x) -> return $ Float (negate x)
+    _ -> Left $ throwWithOffset pos (unOpTypeErr "negate" x)
 
-equal :: Value -> Value -> Either Exception Value
-equal (Int x) (Int y) = return $ Bool $ x == y
-equal (Float x) (Float y) = return $ Bool $ x == y
-equal (String x) (String y) = return $ Bool $ x == y
-equal (Bool x) (Bool y) = return $ Bool $ x == y
-equal x y = operationTypeError "compare" x y
-
-notEqual :: Value -> Value -> Either Exception Value
-notEqual (Int x) (Int y) = return $ Bool $ x /= y
-notEqual (Float x) (Float y) = return $ Bool $ x /= y
-notEqual (String x) (String y) = return $ Bool $ x /= y
-notEqual (Bool x) (Bool y) = return $ Bool $ x /= y
-notEqual x y = operationTypeError "compare" x y
-
-negateVal :: Value -> Either Exception Value
-negateVal (Int x) = return $ Int (negate x)
-negateVal (Float x) = return $ Float (negate x)
-negateVal x = operationTypeErrorSingle "negate" x
-
-bang :: Value -> Either Exception Value
-bang (Bool b) = return $ Bool (not b)
-bang x = operationTypeErrorSingle "invert" x
+bang :: Value -> Position -> Either Exception Value
+bang x pos = case x of
+    (Bool x) -> return $ Bool (not x)
+    _ -> Left $ throwWithOffset pos (unOpTypeErr "negate" x)
 
 printVal :: Value -> IO ()
 printVal (String s) = putStrLn s
@@ -252,13 +231,62 @@ printVal (Func {}) = putStrLn "<func>"
 printVal Null = putStrLn "Null"
 
 eval :: Env -> Exp -> ExceptT Exception IO Value
-eval env (CallFunc exp args) = do
+eval _ (Lit n pos) = return n
+eval env (Var s pos) = varLookup env s pos
+eval env (Add x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ add v1 v2 pos
+eval env (Sub x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ sub v1 v2 pos
+eval env (Mul x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ mul v1 v2 pos
+eval env (Div x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ divide v1 v2 pos
+eval env (Greater x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ greater v1 v2 pos
+eval env (Less x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ lesser v1 v2 pos
+eval env (GreaterEqual x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ greaterEqual v1 v2 pos
+eval env (LessEqual x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ lesserEqual v1 v2 pos
+eval env (Equal x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ equal v1 v2 pos
+eval env (NotEqual x y pos) = do
+    v1 <- eval env x
+    v2 <- eval env y
+    except $ notEqual v1 v2 pos
+eval env (Negate x pos) = do
+    v1 <- eval env x
+    except $ negateVal v1 pos
+eval env (Bang x pos) = do
+    v1 <- eval env x
+    except $ bang v1 pos
+eval env (CallFunc exp args pos) = do
     value <- eval env exp
     case value of
         (Func params stmts funcEnv) -> do
             args <- evalArgs env args
-            funcCall env (Function params stmts funcEnv) args
-        _ -> throwE $ ErrMsg $ "cannot call value of non function type `" ++ valueTypeLookup value ++ "`"
+            funcCall env (Function params stmts funcEnv) args pos
+        _ -> throwE $ throwWithOffset pos (callNonFuncErr value)
+    return value
     where
         evalArgs :: Env -> [Exp] -> ExceptT Exception IO [Value]
         evalArgs env [] = return []
@@ -266,141 +294,134 @@ eval env (CallFunc exp args) = do
             val <- eval env x
             vals <- evalArgs env xs
             return (val:vals)
-eval env (Lambda params exp) = do
-    let function = Func params (ReturnStmt exp) env
+eval env (Lambda params exp pos) = do
+    let function = Func params (ReturnStmt exp (Position 0 0)) env
     return function
-eval _ (Lit n) = return n
-eval env (Var x) = varLookup env x
-eval env (Add x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ add v1 v2
-eval env (Sub x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ sub v1 v2
-eval env (Mul x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ mul v1 v2
-eval env (Div x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ divide v1 v2
-eval env (Greater x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ greater v1 v2
-eval env (Less x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ lesser v1 v2
-eval env (GreaterEqual x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ greaterEqual v1 v2
-eval env (LessEqual x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ lesserEqual v1 v2
-eval env (Equal x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ equal v1 v2
-eval env (NotEqual x y) = do
-    v1 <- eval env x
-    v2 <- eval env y
-    except $ notEqual v1 v2
-eval env (Negate x) = do
-    v1 <- eval env x
-    except $ negateVal v1
-eval env (Bang x) = do
-    v1 <- eval env x
-    except $ bang v1
 
 initVars :: Stmt -> Stmt
 initVars stmt = Seq (getDecs stmt ++ [stmt])
     where
         getDecs :: Stmt -> [Stmt]
-        getDecs (VarAssign s _) = [VarAssign s (Lit Null)]
-        getDecs (LetAssign s _) = [LetAssign s (Lit Null)]
+        getDecs (VarAssign s _ _) = [VarAssign s (Lit Null (Position 0 0)) (Position 0 0)]
+        getDecs (LetAssign s _ _) = [LetAssign s (Lit Null (Position 0 0)) (Position 0 0)]
         getDecs (Seq []) = []
         getDecs (Seq (x:xs)) = getDecs x ++ getDecs (Seq xs)
         getDecs _ = []
 
-moveFuncDecs :: Stmt -> Stmt
-moveFuncDecs stmt =
-    let (funcs, rest) = partition stmt
-    in Seq $ funcs ++ rest
-    where
-        partition :: Stmt -> ([Stmt], [Stmt])
-        partition func@(FuncDef {}) = ([func], [])
-        partition (Seq []) = ([], [])
-        partition (Seq (x:xs)) =
-            let (funcs, rest) = partition x
-                (funcs', rest') = partition (Seq xs)
-            in (funcs ++ funcs', rest ++ rest')
-        partition stmt = ([], [stmt])
+data InterpretErrorType = InvalidRedeclarationOfVar String 
+    | RefBeforeInit String
+    | RefMutVar String
+    | UnboundErr String
+    | ReassignImmutableErr String
+    | BinOpTypeErr String String String
+    | UnOpTypeErr String String
+    | WrongTypeErr String String
+    | CallNonFuncErr String
+    | ArityErr Int Int
+    deriving (Eq, Ord, Show)
+
+data InterpretError = InterpretError { errType :: InterpretErrorType, offset :: Position }
+    deriving (Eq, Ord, Show)
+
+binOpTypeErr :: String -> Value -> Value -> InterpretErrorType
+binOpTypeErr op x y =
+    let v1 = valueTypeLookup x
+        v2 = valueTypeLookup y
+    in BinOpTypeErr op v1 v2
+
+unOpTypeErr :: String -> Value -> InterpretErrorType
+unOpTypeErr op x =
+    let v1 = valueTypeLookup x
+    in UnOpTypeErr op v1
+
+callNonFuncErr :: Value -> InterpretErrorType
+callNonFuncErr = CallNonFuncErr . valueTypeLookup
+
+
+instance ShowErrorComponent InterpretError where
+    showErrorComponent a = case errType a of
+        (InvalidRedeclarationOfVar var) -> "invalid redeclaration of `" ++ var ++ "`"
+        (RefBeforeInit var) -> "attempt to reference variable `" ++ var ++ "` before it was initialized"
+        (RefMutVar var) -> "cannot reference mutable variable `" ++ var ++ "` declared in outer scope"
+        (UnboundErr var) -> "unbound variable `" ++ var ++ "`"
+        (BinOpTypeErr op v1 v2) -> "cannot " ++ op ++ " values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
+        (UnOpTypeErr op v1) -> "cannot " ++ op ++ " value of type `" ++ v1 ++ "`"
+        (ReassignImmutableErr var) -> "cannot reassign immutable variable `" ++ var ++ "`"
+        (WrongTypeErr x y) -> "cannot use value of type `" ++ x ++ "` where value of type `" ++ y ++ "` was expected"
+        (CallNonFuncErr x) -> "cannot call value of non function type `" ++ x ++ "`"
+        (ArityErr x y) -> "incorrect number of arguments passed to function" ++
+            "\n" ++ show x ++ " parameters expected but " ++ show y ++ " arguments passed in"
+    errorComponentLen a = posLength $ offset a
+
+throwWithOffset :: Position -> InterpretErrorType -> Exception
+throwWithOffset offset errType =
+    let interpretError = InterpretError errType offset
+    in InterpErr interpretError
+
+throwErrIf' :: Bool -> InterpretError -> Either Exception ()
+throwErrIf' False _ = return ()
+throwErrIf' True err = Left $ InterpErr err
 
 exec :: Env -> Stmt -> ExceptT Exception IO Env
-exec env (VarAssign s exp) = do
+exec env (VarAssign s exp pos) = do
     scoped <- lift (s `inScope` env)
-    except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
+    except $ guardEither (not scoped) (throwWithOffset pos (InvalidRedeclarationOfVar s))
     value <- eval env exp
-    lift $ varAssign env (s, value)
-exec env (LetAssign s exp) = do
+    lift $ addVar env (s, value)
+exec env (LetAssign s exp pos) = do
     scoped <- lift (s `inScope` env)
-    except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
+    except $ guardEither (not scoped) (throwWithOffset pos (InvalidRedeclarationOfVar s))
     value <- eval env exp
-    lift $ letAssign env (s, value)
-exec env (VarReassign s exp) = do
+    lift $ addLet env (s, value)
+exec env (VarReassign s exp pos) = do
     value <- eval env exp
-    varReassign env (s, value)
-exec env (While exp stmt) = do
+    varReassign env (s, value) pos
+exec env (While exp stmt pos) = do
     value <- eval env exp
     case value of
-        (Bool True) -> exec env (Seq [stmt, While exp stmt])
+        (Bool True) -> exec env (Seq [stmt, While exp stmt pos])
         (Bool False) -> return env
-        v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
-exec env (If [] stmt) = exec env stmt
-exec env (If ((exp, stmt):xs) stmt') = do
+        v -> throwE $ throwWithOffset (getExpPosition exp) (WrongTypeErr (valueTypeLookup v) "Bool")
+exec env (If [] stmt pos) = exec env stmt
+exec env (If ((exp, stmt):xs) stmt' pos) = do
     value <- eval env exp
     case value of
         (Bool True) -> exec env stmt
-        (Bool False) -> exec env $ If xs stmt'
-        v -> throwE $ ErrMsg $ genericTypeException (valueTypeLookup v) "Bool"
+        (Bool False) -> exec env $ If xs stmt' pos
+        v -> throwE $ throwWithOffset (getExpPosition exp) (WrongTypeErr (valueTypeLookup v) "Bool")
+    return env
 exec env (Seq []) = return env
 exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
-exec env (FuncDef s args stmt) = do
+exec env (FuncDef s args stmt pos) = do
     scoped <- lift (s `inScope` env)
-    except $ throwErrIf scoped ("invalid redeclaration of `" ++ s ++ "`")
-    let movedDecs = moveFuncDecs stmt
-    let varInits = initVars movedDecs
+    except $ guardEither (not scoped) (throwWithOffset pos (InvalidRedeclarationOfVar s))
+    let varInits = initVars stmt
     let function = Func args varInits env
-    lift $ letAssign env (s, function)
-exec env (CallExp exp) = case exp of
-    (CallFunc name args) -> eval env exp >> return env
+    lift $ addLet env (s, function)
+exec env (CallExp exp pos) = case exp of
+    (CallFunc name args pos) -> eval env exp >> return env
     _ -> eval env exp >> return env
-exec env (ReturnStmt expStmt) = throwE $ ReturnExcept env expStmt
-exec env (Print expStmt) = do
-    val <- eval env expStmt
+exec env (ReturnStmt expStmt pos) = throwE $ ReturnExcept env expStmt
+exec env (Print exp pos) = do
+    val <- eval env exp
     lift (printVal val)
     return env
 
 performTransformations :: Stmt -> Stmt
-performTransformations = initVars . moveFuncDecs
+performTransformations = initVars
 
-runProgram :: Env -> Stmt -> IO ()
-runProgram env stmt = do
+runProgram :: Env -> Stmt -> ExceptT InterpretError IO ()
+runProgram env stmt = ExceptT $ do
     let transformed = performTransformations stmt
     result <- runExceptT $ exec env transformed
     case result of
-        Right _ -> return ()
-        Left (ReturnExcept _ _) -> putStrLn "unexpected return statement not nested in function"
-        Left (ErrMsg msg) -> putStrLn msg
+        Right _ -> return $ return ()
+        Left (InterpErr err) -> return $ Left err
+        Left (ReturnExcept _ _) -> putStrLn "unexpected return statement not nested in function" >> return (return ())
+        Left (ErrMsg msg) -> putStrLn msg >> return (return ())
 
-execNew :: Stmt -> IO ()
-execNew stmt = newEnv >>= \env -> runProgram env stmt
+execNew :: Stmt -> ExceptT InterpretError IO ()
+execNew stmt = lift newEnv >>= \env -> runProgram env stmt
 
 isVar :: Value -> Bool
 isVar Func {} = False

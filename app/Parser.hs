@@ -21,14 +21,18 @@ lexeme1 = (space1 >>)
 
 parseNum :: Parser Exp
 parseNum = do
-    char '-'
-    int <- intPart
-    (floatPart >>= \float -> return $ Lit $ Float $ negate (read $ int ++ "." ++ float)) 
-        <|> return (Lit $ Int $ negate (read int))
-    <|> do
+    offset <- getOffset
+    num <- do
+        char '-'
         int <- intPart
-        (floatPart >>= \float -> return $ Lit $ Float (read $ int ++ "." ++ float))
-            <|> return (Lit $ Int (read int))
+        (floatPart >>= \float -> return $ Lit $ Float $ negate (read $ int ++ "." ++ float)) 
+            <|> return (Lit $ Int $ negate (read int))
+        <|> do
+            int <- intPart
+            (floatPart >>= \float -> return $ Lit $ Float (read $ int ++ "." ++ float))
+                <|> return (Lit $ Int (read int))
+    len <- getOffset <&> subtract offset
+    return $ num (Position offset len)
     where
         intPart :: Parser String
         intPart = do
@@ -54,11 +58,32 @@ parseIdentifier = do
 parseBool :: Parser Bool
 parseBool = (string "true" >> return True) <|> (string "false" >> return False)
 
+parseBoolLit :: Parser Exp
+parseBoolLit = do
+    offset <- getOffset
+    b <- parseBool
+    len <- getOffset <&> subtract offset
+    return $ Lit (Bool b) (Position offset len)
+
+parseStringLit :: Parser Exp
+parseStringLit = do
+    offset <- getOffset
+    s <- parseString
+    len <- getOffset <&> subtract offset
+    return $ Lit (String s) (Position offset len)
+
+parseVar :: Parser Exp
+parseVar = do
+    offset <- getOffset
+    var <- parseIdentifier
+    len <- getOffset <&> subtract offset
+    return $ Var var (Position offset len)
+
 parsePrimary :: Parser Exp
-parsePrimary = space >> (parseString <&> Lit . String) 
-    <|> (parseBool <&> Lit . Bool)
+parsePrimary = space >> parseStringLit
+    <|> parseBoolLit
     <|> parseNum
-    <|> (parseIdentifier <&> Var)
+    <|> parseVar
     <|> (do
         char '('
         expr <- parseExp
@@ -67,6 +92,7 @@ parsePrimary = space >> (parseString <&> Lit . String)
 
 parseCallFunc :: Parser Exp
 parseCallFunc = do
+    offset <- getOffset
     primary <- parsePrimary
     flattenedCalls primary
     where
@@ -82,80 +108,86 @@ parseCallFunc = do
             rest <- many $ lexeme (char ',') >> parseExp
             return (first:rest)) <|> return []
         flattenedCalls :: Exp -> Parser Exp
-        flattenedCalls exp = (call >>= flattenedCalls . CallFunc exp) <|> return exp
+        flattenedCalls exp = (do
+            offset <- getOffset
+            args <- call
+            len <- getOffset <&> subtract offset
+            flattenedCalls (CallFunc exp args (Position offset len))) <|> return exp
         
 parseUnary :: Parser Exp
 parseUnary = do
+    offset <- getOffset
     op <- try $ lexeme $ (char '-' $> Negate) <|> (char '!' $> Bang)
-    op <$> parseUnary
+    u <- parseUnary
+    len <- getOffset <&> subtract offset
+    return $ op u (Position offset len)
     <|> parseCallFunc
 
 parseFactor :: Parser Exp
 parseFactor = do
     space
+    offset <- getOffset
     u <- parseUnary
-    space
-    flattenedFactor u
+    flattenedFactor offset u
      where
-         flattenedFactor :: Exp -> Parser Exp
-         flattenedFactor p = do
+         flattenedFactor :: Int -> Exp -> Parser Exp
+         flattenedFactor offset p = do
             op <- try $ lexeme $ (char '*' $> Mul) <|> (char '/' $> Div)
             p1 <- parseUnary
-            flattenedFactor (op p p1)
+            len <- getOffset <&> subtract offset
+            flattenedFactor offset (op p p1 (Position offset len))
             <|> return p
              
 parseTerm :: Parser Exp
 parseTerm = do
     space
+    offset <- getOffset
     f <- parseFactor
-    space
-    flattenedTerm f
+    flattenedTerm offset f
     where
-        flattenedTerm :: Exp -> Parser Exp
-        flattenedTerm f = do
+        flattenedTerm :: Int -> Exp -> Parser Exp
+        flattenedTerm offset f = do
             op <- try $ lexeme $ (char '+' $> Add) <|> (char '-' $> Sub)
             f1 <- parseFactor
-            flattenedTerm (op f f1)
+            len <- getOffset <&> subtract offset
+            flattenedTerm offset (op f f1 (Position offset len))
             <|> return f
-            
+
 parseComparison :: Parser Exp
 parseComparison = do
     space
+    offset <- getOffset
     t <- parseTerm
-    space
-    flattenedComparison t
-    where
-        flattenedComparison :: Exp -> Parser Exp
-        flattenedComparison t = do
-            op <- try $ lexeme $ (string ">=" $> GreaterEqual) 
+    (do
+        op <- try $ lexeme $ (string ">=" $> GreaterEqual) 
                 <|> (string ">" $> Greater) 
                 <|> (string "<=" $> LessEqual) 
                 <|> (string "<" $> Less)
-            t1 <- parseTerm
-            flattenedComparison (op t t1)
-            <|> return t
-            
+        t1 <- parseTerm
+        len <- getOffset <&> subtract offset
+        return (op t t1 (Position offset len))) <|> return t
+
 parseEquality :: Parser Exp
 parseEquality = do
     space
+    offset <- getOffset
     c <- parseComparison
-    space
-    flattenedEquality c
-    where
-        flattenedEquality :: Exp -> Parser Exp
-        flattenedEquality e = do
-            op <- try $ lexeme $ (string "==" $> Equal) <|> (string "!=" $> NotEqual)
-            e1 <- parseComparison
-            flattenedEquality (op e e1)
-            <|> return e
-
+    (do
+        op <- try $ lexeme $ (string "==" $> Equal) <|> (string "!=" $> NotEqual)
+        e1 <- parseComparison
+        len <- getOffset <&> subtract offset
+        return (op c e1 (Position offset len))) <|> return c
+            
 parseLambda :: Parser Exp
 parseLambda = (do
+    offset <- getOffset
     char '\\' <|> char 'λ'
     params <- parseParams
     space
     string "->"
-    Lambda params <$> parseExp) <|> parseEquality
+    exp <- parseExp
+    len <- getOffset <&> subtract offset
+    return $ Lambda params exp (Position offset len)) <|> parseEquality
     where
         parseParams :: Parser [String]
         parseParams = do
@@ -167,10 +199,10 @@ parseLambda = (do
 parseExp :: Parser Exp
 parseExp = parseLambda
 
-parseCallExp :: Parser Stmt
+parseCallExp :: Parser (Position -> Stmt)
 parseCallExp = CallExp <$> parseExp
 
-parseVarAssign :: Parser Stmt
+parseVarAssign :: Parser (Position -> Stmt)
 parseVarAssign = do
     string "var"
     space1 <|> fail "expected assignment"
@@ -180,7 +212,7 @@ parseVarAssign = do
     space
     VarAssign iden <$> parseExp <|> fail "no right hand side of equation"
 
-parseLetAssign :: Parser Stmt
+parseLetAssign :: Parser (Position -> Stmt)
 parseLetAssign = do
     string "let"
     space1 <|> fail "expected assignment"
@@ -194,16 +226,16 @@ guardError :: Bool -> String -> Parser ()
 guardError True s = fail s
 guardError False s = return ()
     
-parseVarReassign :: Parser Stmt
+parseVarReassign :: Parser (Position -> Stmt)
 parseVarReassign = do
     iden <- parseIdentifier
     guardError (iden == "var") "unexpected `var` keyword found in variable reassign"
     lexeme (char '=')
     VarReassign iden <$> parseExp
     
-parseIf :: Parser Stmt
+parseIf :: Parser (Position -> Stmt)
 parseIf = do
-    lexeme (string "if") >> space1
+    string "if" >> space1
     expStmt <- lexeme parseExp
     stmts <- parseScope
     elses <- elseIfs
@@ -220,7 +252,7 @@ parseIf = do
             lexeme (string "else") >> space1
             parseScope) <|> return (Seq [])
     
-parseWhile :: Parser Stmt
+parseWhile :: Parser (Position -> Stmt)
 parseWhile = do
     string "while"
     space1
@@ -231,12 +263,13 @@ parseScope :: Parser Stmt
 parseScope = do
     lexeme (char '{')
     space
-    stmts <- many parseStmt
+    stmts <- many (parseStmt >>= \stmt -> space >> return stmt)
+    space
     lexeme (char '}')
     space
     return (Seq stmts)
     
-parseFuncDef :: Parser Stmt
+parseFuncDef :: Parser (Position -> Stmt)
 parseFuncDef = do
     string "func"
     space1
@@ -254,26 +287,32 @@ parseFuncDef = do
             rest <- many $ lexeme (char ',') >> lexeme parseIdentifier
             return (first:rest)
             
-parseReturnStmt :: Parser Stmt
+parseReturnStmt :: Parser (Position -> Stmt)
 parseReturnStmt = (string "return" >> space1 >> parseExp) <&> ReturnStmt
 
-parsePrint :: Parser Stmt
+parsePrint :: Parser (Position -> Stmt)
 parsePrint = (string "print" >> space1 >> parseExp) <&> Print
 
 parseStmt :: Parser Stmt
-parseStmt = parseVarAssign
-    <|> parseLetAssign
-    <|> parseWhile 
-    <|> parseFuncDef
-    <|> parseIf
-    <|> parsePrint 
-    <|> parseReturnStmt 
-    <|> try parseVarReassign
-    <|> parseCallExp
+parseStmt = do
+    offset <- getOffset
+    stmt <- parseVarAssign
+        <|> parseLetAssign
+        <|> parseWhile 
+        <|> parseFuncDef
+        <|> parseIf
+        <|> parsePrint
+        <|> parseReturnStmt 
+        <|> try parseVarReassign
+        <|> parseCallExp
+    len <- getOffset <&> subtract offset
+    return $ stmt (Position offset len)
 
 parseProgram :: Parser Stmt
 parseProgram = do
     stmts <- many (space >> parseStmt)
+    offset <- getOffset
+    src <- getSourcePos
     space
     eof
     return (Seq stmts)

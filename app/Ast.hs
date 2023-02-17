@@ -5,6 +5,8 @@ module Ast (
   valueTypeLookup,
   Exp (..),
   Stmt (..),
+  Position(..),
+  getExpPosition,
   Env (..),
   Val (..),
   Var
@@ -30,18 +32,20 @@ data Function = Function {
   funcParams :: [String],
   funcStmts :: Stmt,
   funcEnv :: Env
- }
+  }
 
-data Stmt = VarAssign String Exp
-    | VarReassign String Exp
-    | LetAssign String Exp
-    | While Exp Stmt
-    | If [(Exp, Stmt)] Stmt
+data Position = Position { posOffset :: Int, posLength :: Int } deriving (Eq, Ord, Show)
+
+data Stmt = VarAssign String Exp Position
+    | VarReassign String Exp Position
+    | LetAssign String Exp Position
+    | While Exp Stmt Position
+    | If [(Exp, Stmt)] Stmt Position
     | Seq [Stmt]
-    | FuncDef String [String] Stmt
-    | ReturnStmt Exp
-    | CallExp Exp
-    | Print Exp
+    | FuncDef String [String] Stmt Position
+    | ReturnStmt Exp Position
+    | CallExp Exp Position
+    | Print Exp Position
     deriving Show
     
 data Value = Int Int
@@ -56,23 +60,41 @@ isNull :: Value -> Bool
 isNull Null = True
 isNull _ = False
 
-data Exp = Add Exp Exp
-    | Sub Exp Exp
-    | Mul Exp Exp
-    | Div Exp Exp
-    | Equal Exp Exp
-    | NotEqual Exp Exp
-    | Greater Exp Exp
-    | GreaterEqual Exp Exp
-    | Less Exp Exp
-    | LessEqual Exp Exp
-    | Negate Exp
-    | Bang Exp
-    | CallFunc Exp [Exp]
-    | Lambda [String] Exp
-    | Lit Value
-    | Var String
+data Exp = Add Exp Exp Position
+    | Sub Exp Exp Position
+    | Mul Exp Exp Position
+    | Div Exp Exp Position
+    | Equal Exp Exp Position
+    | NotEqual Exp Exp Position
+    | Greater Exp Exp Position
+    | GreaterEqual Exp Exp Position
+    | Less Exp Exp Position
+    | LessEqual Exp Exp Position
+    | Negate Exp Position
+    | Bang Exp Position
+    | CallFunc Exp [Exp] Position
+    | Lambda [String] Exp Position
+    | Lit Value Position
+    | Var String Position
     deriving Show
+
+getExpPosition :: Exp -> Position
+getExpPosition (Add _ _ pos) = pos
+getExpPosition (Sub _ _ pos) = pos
+getExpPosition (Mul _ _ pos) = pos
+getExpPosition (Div _ _ pos) = pos
+getExpPosition (Equal _ _ pos) = pos
+getExpPosition (NotEqual _ _ pos) = pos
+getExpPosition (Greater _ _ pos) = pos
+getExpPosition (GreaterEqual _ _ pos) = pos
+getExpPosition (Less _ _ pos) = pos
+getExpPosition (LessEqual _ _ pos) = pos
+getExpPosition (Negate _ pos) = pos
+getExpPosition (Bang _ pos) = pos
+getExpPosition (CallFunc _ _ pos) = pos
+getExpPosition (Lambda _ _ pos) = pos
+getExpPosition (Lit _ pos) = pos
+getExpPosition (Var _ pos) = pos
 
 valueTypeLookup :: Value -> String
 valueTypeLookup v = case v of
