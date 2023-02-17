@@ -34,7 +34,7 @@ main = do
     text <- hGetContents file
     case thingToDo of
         "1" -> parseTest parseProgram text
-        "2" -> case parse parseProgram "error" text of
+        "2" -> case parse parseProgram filename text of
             Left err -> putStrLn $ errorBundlePretty err
             Right stmt -> do
                 result <- runExceptT $ execNew stmt
