@@ -132,7 +132,7 @@ funcCall env@(Env store prev) function args pos = do
     let vars = zip params args
     env' <- lift $ addConstScope funcEnv vars
     ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
-            Right env'' -> return $ Right Null
+            Right env'' -> return $ Right Void
             Left (ReturnExcept env'' expStmt) -> runExceptT $ eval env'' expStmt
             Left a -> return $ Left a
     where
@@ -228,6 +228,7 @@ printVal (Float f) = print f
 printVal (Int n) = print n
 printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
+printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
 
 eval :: Env -> Exp -> ExceptT Exception IO Value

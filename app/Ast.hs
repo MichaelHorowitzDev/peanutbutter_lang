@@ -53,6 +53,7 @@ data Value = Int Int
     | String String
     | Bool Bool
     | Func [String] Stmt Env
+    | Void
     | Null
     deriving Show
 
@@ -102,4 +103,5 @@ valueTypeLookup v = case v of
     Float {} -> "Float"
     String {} -> "String"
     Bool {} -> "Bool"
+    Void -> "Void"
     _ -> "Unknown type"
