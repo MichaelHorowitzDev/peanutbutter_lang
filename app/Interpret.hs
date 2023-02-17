@@ -286,7 +286,6 @@ eval env (CallFunc exp args pos) = do
             args <- evalArgs env args
             funcCall env (Function params stmts funcEnv) args pos
         _ -> throwE $ throwWithOffset pos (callNonFuncErr value)
-    return value
     where
         evalArgs :: Env -> [Exp] -> ExceptT Exception IO [Value]
         evalArgs env [] = return []
