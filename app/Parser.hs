@@ -94,18 +94,26 @@ parseCallFunc :: Parser Exp
 parseCallFunc = do
     offset <- getOffset
     primary <- parsePrimary
+    space
     flattenedCalls primary
     where
         call :: Parser [Exp]
         call = do
             char '('
+            space
             args <- parseArgs
+            space
             char ')'
             return args
         parseArgs :: Parser [Exp]
         parseArgs = (do
             first <- try parseExp
-            rest <- many $ lexeme (char ',') >> parseExp
+            space
+            rest <- many $ do
+                char ','
+                exp <- parseExp
+                space
+                return exp
             return (first:rest)) <|> return []
         flattenedCalls :: Exp -> Parser Exp
         flattenedCalls exp = (do
