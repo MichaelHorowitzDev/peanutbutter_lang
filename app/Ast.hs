@@ -60,7 +60,7 @@ data Value = Int Int
     | String String
     | Bool Bool
     | Func [String] Stmt Env
-    | NativeFunc Int ([(Value, Position)] -> (ExceptT Exception IO Value))
+    | NativeFunc Int ([(Value, Position)] -> ExceptT Exception IO Value)
     | Void
     | Null
 
