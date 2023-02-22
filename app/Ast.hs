@@ -1,6 +1,11 @@
 module Ast (
   Function (..),
   Value (..),
+  getInt,
+  getFloat,
+  getString,
+  getBool,
+  getArray,
   isNull,
   valueTypeLookup,
   Exp (..),
@@ -18,6 +23,7 @@ import System.IO.Unsafe
 import Position
 import InterpretError
 import Control.Monad.Trans.Except
+import qualified Data.Vector as V
 
 data Exception = ErrMsg String
     | ReturnExcept Env Exp
@@ -61,8 +67,29 @@ data Value = Int Int
     | Bool Bool
     | Func [String] Stmt Env
     | NativeFunc Int ([(Value, Position)] -> ExceptT Exception IO Value)
+    | Array (V.Vector Exp)
     | Void
     | Null
+
+getInt :: Value -> Maybe Int
+getInt (Int n) = Just n
+getInt _ = Nothing
+
+getFloat :: Value -> Maybe Float
+getFloat (Float f) = Just f
+getFloat _ = Nothing
+
+getString :: Value -> Maybe String
+getString (String s) = Just s
+getString _ = Nothing
+
+getBool :: Value -> Maybe Bool
+getBool (Bool b) = Just b
+getBool _ = Nothing
+
+getArray :: Value -> Maybe (V.Vector Exp)
+getArray (Array v) = Just v
+getArray _ = Nothing
 
 instance Show Value where
     show a = case a of
@@ -72,7 +99,7 @@ instance Show Value where
         (Bool b) -> show b
         (Func {}) -> "<func>"
         (NativeFunc {}) -> "<native_fn>"
-        (Array _) -> "Array"
+        (Array vector) -> "Array " ++ show vector
         Void -> "Void"
         Null -> "Null"
         
@@ -95,6 +122,7 @@ data Exp = Add Exp Exp Position
     | Bang Exp Position
     | CallFunc Exp [Exp] Position
     | Lambda [String] Exp Position
+    | Subscript Exp Exp Position
     | Lit Value Position
     | Var String Position
     deriving Show
@@ -126,4 +154,6 @@ valueTypeLookup v = case v of
     Func {} -> "Function"
     NativeFunc {} -> "Function"
     Void -> "Void"
+    Array {} -> "Array"
+    Null -> "Null"
     _ -> "Unknown type"

@@ -10,6 +10,7 @@ import Data.Void (Void)
 import Control.Monad
 import Data.Functor
 import Ast
+import qualified Data.Vector as V
     
 type Parser = Parsec Void String
 
@@ -79,8 +80,24 @@ parseVar = do
     len <- getOffset <&> subtract offset
     return $ Var var (Position offset len)
 
+parseArray :: Parser Exp
+parseArray = do
+    offset <- getOffset
+    char '['
+    elems <- parseElems
+    char ']'
+    len <- getOffset <&> subtract offset
+    return $ Lit (Array (V.fromList elems)) (Position offset len)
+    where
+        parseElems :: Parser [Exp]
+        parseElems = (do
+            first <- try parseExp
+            rest <- many $ lexeme (char ',') >> parseExp
+            return (first:rest)) <|> return []
+
 parsePrimary :: Parser Exp
-parsePrimary = space >> parseStringLit
+parsePrimary = space >> parseArray
+    <|> parseStringLit
     <|> parseBoolLit
     <|> parseNum
     <|> parseVar
@@ -90,21 +107,15 @@ parsePrimary = space >> parseStringLit
         char ')'
         return expr)
 
-parseCallFunc :: Parser Exp
-parseCallFunc = do
-    offset <- getOffset
-    primary <- parsePrimary
+funcCall :: Parser [Exp]
+funcCall = do
+    char '('
     space
-    flattenedCalls primary
+    args <- parseArgs
+    space
+    char ')'
+    return args
     where
-        call :: Parser [Exp]
-        call = do
-            char '('
-            space
-            args <- parseArgs
-            space
-            char ')'
-            return args
         parseArgs :: Parser [Exp]
         parseArgs = (do
             first <- try parseExp
@@ -115,12 +126,30 @@ parseCallFunc = do
                 space
                 return exp
             return (first:rest)) <|> return []
+
+subscript :: Parser Exp
+subscript = do
+    char '['
+    space
+    exp <- try parseExp <|> fail "you forgot to pass in an integer for subscripting"
+    space
+    char ']'
+    return exp
+
+parseCallFunc :: Parser Exp
+parseCallFunc = do
+    offset <- getOffset
+    primary <- parsePrimary
+    space
+    flattenedCalls primary
+    where
         flattenedCalls :: Exp -> Parser Exp
         flattenedCalls exp = (do
             offset <- getOffset
-            args <- call
+            op <- (funcCall <&> CallFunc exp) <|> (subscript <&> Subscript exp)
             len <- getOffset <&> subtract offset
-            flattenedCalls (CallFunc exp args (Position offset len))) <|> return exp
+            flattenedCalls $ op (Position offset len)
+            ) <|> return exp
         
 parseUnary :: Parser Exp
 parseUnary = do

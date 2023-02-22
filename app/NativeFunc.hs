@@ -16,10 +16,6 @@ guardEither :: Bool -> a -> Either a ()
 guardEither False a = Left a
 guardEither True _ = return ()
 
-getFloat :: Value -> Maybe Float
-getFloat (Float f) = Just f
-getFloat _ = Nothing
-
 throwWithOffset :: Position -> InterpretErrorType -> Exception
 throwWithOffset offset errType =
     let interpretError = InterpretError errType offset

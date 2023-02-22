@@ -11,6 +11,7 @@ import Data.IORef
 import Text.Megaparsec
 import InterpretError
 import NativeFunc
+import qualified Data.Vector as V
 
 type Prog = Stmt
 
@@ -136,6 +137,9 @@ unOpTypeErr op x =
 
 callNonFuncErr :: Value -> InterpretErrorType
 callNonFuncErr = CallNonFuncErr . valueTypeLookup
+
+subscriptNonArrayErr :: Value -> InterpretErrorType
+subscriptNonArrayErr = SubscriptNonArray . valueTypeLookup
 
 nativeFuncCall :: Env -> Position -> [Exp] -> Int -> NativeFunction -> ExceptT Exception IO Value
 nativeFuncCall env pos exps n f = do
@@ -328,6 +332,12 @@ eval env (CallFunc exp args pos) = do
 eval env (Lambda params exp pos) = do
     let function = Func params (ReturnStmt exp (Position 0 0)) env
     return function
+eval env (Subscript exp sub pos) = do
+    value <- eval env exp
+    vector <- except $ maybeToEither (throwWithOffset pos $ subscriptNonArrayErr value) (getArray value)
+    index <- eval env sub >>= \index -> except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
+    except $ guardEither (V.length vector > index && index >= 0) (throwWithOffset pos $ IndexOutOfBounds index (V.length vector))
+    eval env (vector V.! index)
 
 initVars :: Stmt -> Stmt
 initVars stmt = Seq (getDecs stmt ++ [stmt])

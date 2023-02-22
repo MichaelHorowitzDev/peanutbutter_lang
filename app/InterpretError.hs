@@ -12,6 +12,8 @@ data InterpretErrorType = InvalidRedeclarationOfVar String
     | UnOpTypeErr String String
     | WrongTypeErr String String
     | CallNonFuncErr String
+    | SubscriptNonArray String
+    | IndexOutOfBounds Int Int
     | ArityErr Int Int
     deriving (Eq, Ord, Show)
 
@@ -29,6 +31,8 @@ instance ShowErrorComponent InterpretError where
         (ReassignImmutableErr var) -> "cannot reassign immutable variable `" ++ var ++ "`"
         (WrongTypeErr x y) -> "cannot use value of type `" ++ x ++ "` where value of type `" ++ y ++ "` was expected"
         (CallNonFuncErr x) -> "cannot call value of non function type `" ++ x ++ "`"
+        (SubscriptNonArray x) -> "cannot subscript value of non array type `" ++ x ++ "`"
+        (IndexOutOfBounds x y) -> "attempt to index list but index `" ++ show x ++ "` is outside bounds range of (0, " ++ show (y - 1) ++ ")"
         (ArityErr x y) -> "incorrect number of arguments passed to function" ++
             "\n" ++ show x ++ " parameters expected but " ++ show y ++ " arguments passed in"
     errorComponentLen a = posLength $ offset a
