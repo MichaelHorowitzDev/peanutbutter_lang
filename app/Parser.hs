@@ -87,7 +87,7 @@ parseArray = do
     elems <- parseElems
     char ']'
     len <- getOffset <&> subtract offset
-    return $ Lit (Array (V.fromList elems)) (Position offset len)
+    return $ ArrayDef elems (Position offset len)
     where
         parseElems :: Parser [Exp]
         parseElems = (do

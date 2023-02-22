@@ -11,6 +11,7 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Class
 import InterpretError
 import Data.Either.Extra
+import qualified Data.Vector as V
 
 guardEither :: Bool -> a -> Either a ()
 guardEither False a = Left a
@@ -34,6 +35,12 @@ clockNative _ = do
     time <- lift (getCurrentTime <&> realToFrac . utctDayTime)
     return $ Float time
 
+vectorLengthNative :: NativeFunction
+vectorLengthNative args = do
+    let (v, pos) = head args
+    v <- except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) "List") (getArray v)
+    return $ Int (V.length v)
+
 varFromFunc :: String -> Int -> NativeFunction -> (Var, Val)
 varFromFunc s arr f = (s, Val { value = NativeFunc arr f, mutable = False })
 
@@ -44,5 +51,6 @@ varsFromFuncs ((s, arr, f):xs) = varFromFunc s arr f : varsFromFuncs xs
 nativeFuncs :: [(String, Int, NativeFunction)]
 nativeFuncs = [
     ("sqrt", 1, sqrtNative),
-    ("clock", 0, clockNative)
+    ("clock", 0, clockNative),
+    ("length", 1, vectorLengthNative)
     ]

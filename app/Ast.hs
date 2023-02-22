@@ -67,7 +67,7 @@ data Value = Int Int
     | Bool Bool
     | Func [String] Stmt Env
     | NativeFunc Int ([(Value, Position)] -> ExceptT Exception IO Value)
-    | Array (V.Vector Exp)
+    | Array (V.Vector Value)
     | Void
     | Null
 
@@ -87,7 +87,7 @@ getBool :: Value -> Maybe Bool
 getBool (Bool b) = Just b
 getBool _ = Nothing
 
-getArray :: Value -> Maybe (V.Vector Exp)
+getArray :: Value -> Maybe (V.Vector Value)
 getArray (Array v) = Just v
 getArray _ = Nothing
 
@@ -101,8 +101,7 @@ instance Show Value where
         (NativeFunc {}) -> "<native_fn>"
         (Array vector) -> "Array " ++ show vector
         Void -> "Void"
-        Null -> "Null"
-        
+        Null -> "Null"    
 
 isNull :: Value -> Bool
 isNull Null = True
@@ -122,6 +121,7 @@ data Exp = Add Exp Exp Position
     | Bang Exp Position
     | CallFunc Exp [Exp] Position
     | Lambda [String] Exp Position
+    | ArrayDef [Exp] Position
     | Subscript Exp Exp Position
     | Lit Value Position
     | Var String Position
@@ -142,6 +142,8 @@ getExpPosition (Negate _ pos) = pos
 getExpPosition (Bang _ pos) = pos
 getExpPosition (CallFunc _ _ pos) = pos
 getExpPosition (Lambda _ _ pos) = pos
+getExpPosition (ArrayDef _ pos) = pos
+getExpPosition (Subscript _ _ pos) = pos
 getExpPosition (Lit _ pos) = pos
 getExpPosition (Var _ pos) = pos
 
@@ -156,4 +158,3 @@ valueTypeLookup v = case v of
     Void -> "Void"
     Array {} -> "Array"
     Null -> "Null"
-    _ -> "Unknown type"

@@ -261,6 +261,7 @@ printVal (Int n) = print n
 printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
 printVal (NativeFunc {}) = putStrLn "<native_fn>"
+printVal (Array v) = print v
 printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
 
@@ -332,12 +333,22 @@ eval env (CallFunc exp args pos) = do
 eval env (Lambda params exp pos) = do
     let function = Func params (ReturnStmt exp (Position 0 0)) env
     return function
+eval env (ArrayDef exps pos) = do
+    vals <- evalExps env exps
+    return $ Array (V.fromList vals)
+    where
+        evalExps :: Env -> [Exp] -> ExceptT Exception IO [Value]
+        evalExps env [] = return []
+        evalExps env (x:xs) = do
+            val <- eval env x
+            vals <- evalExps env xs
+            return (val:vals)
 eval env (Subscript exp sub pos) = do
     value <- eval env exp
     vector <- except $ maybeToEither (throwWithOffset pos $ subscriptNonArrayErr value) (getArray value)
     index <- eval env sub >>= \index -> except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
     except $ guardEither (V.length vector > index && index >= 0) (throwWithOffset pos $ IndexOutOfBounds index (V.length vector))
-    eval env (vector V.! index)
+    return $ vector V.! index
 
 initVars :: Stmt -> Stmt
 initVars stmt = Seq (getDecs stmt ++ [stmt])
