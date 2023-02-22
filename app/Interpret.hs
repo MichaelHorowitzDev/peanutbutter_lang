@@ -9,17 +9,19 @@ import Control.Monad.Trans.Class
 import Data.Maybe (fromJust)
 import Data.IORef
 import Text.Megaparsec
+import InterpretError
+import NativeFunc
 
 type Prog = Stmt
-
-data Exception = ErrMsg String
-    | ReturnExcept Env Exp
-    | InterpErr InterpretError
-    deriving Show
 
 newEnv :: IO Env
 newEnv = do
     x <- newIORef []
+    return $ Env x Nothing
+
+envWithNative :: IO Env
+envWithNative = do
+    x <- newIORef (varsFromFuncs nativeFuncs)
     return $ Env x Nothing
 
 envLookup :: Env -> Var -> IO (Maybe Val)
@@ -111,6 +113,45 @@ removeScope (Env _ prev) = prev
 guardEither :: Bool -> a -> Either a ()
 guardEither False a = Left a
 guardEither True _ = return ()
+
+throwWithOffset :: Position -> InterpretErrorType -> Exception
+throwWithOffset offset errType =
+    let interpretError = InterpretError errType offset
+    in InterpErr interpretError
+
+throwErrIf' :: Bool -> InterpretError -> Either Exception ()
+throwErrIf' False _ = return ()
+throwErrIf' True err = Left $ InterpErr err
+
+binOpTypeErr :: String -> Value -> Value -> InterpretErrorType
+binOpTypeErr op x y =
+    let v1 = valueTypeLookup x
+        v2 = valueTypeLookup y
+    in BinOpTypeErr op v1 v2
+
+unOpTypeErr :: String -> Value -> InterpretErrorType
+unOpTypeErr op x =
+    let v1 = valueTypeLookup x
+    in UnOpTypeErr op v1
+
+callNonFuncErr :: Value -> InterpretErrorType
+callNonFuncErr = CallNonFuncErr . valueTypeLookup
+
+nativeFuncCall :: Env -> Position -> [Exp] -> Int -> NativeFunction -> ExceptT Exception IO Value
+nativeFuncCall env pos exps n f = do
+    except testArity
+    args <- evalArgs env exps
+    f args
+    where
+        testArity = guardEither (length exps == n)
+            (throwWithOffset pos (ArityErr n (length exps)))
+        evalArgs :: Env -> [Exp] -> ExceptT Exception IO [(Value, Position)]
+        evalArgs env [] = return []
+        evalArgs env (x:xs) = do
+            let pos = getExpPosition x
+            val <- eval env x
+            vals <- evalArgs env xs
+            return ((val, pos) : vals)
 
 funcCall :: Env -> Function -> [Value] -> Position -> ExceptT Exception IO Value
 funcCall env@(Env store prev) function args pos = do
@@ -215,6 +256,7 @@ printVal (Float f) = print f
 printVal (Int n) = print n
 printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
+printVal (NativeFunc {}) = putStrLn "<native_fn>"
 printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
 
@@ -273,6 +315,8 @@ eval env (CallFunc exp args pos) = do
         (Func params stmts funcEnv) -> do
             args <- evalArgs env args
             funcCall env (Function params stmts funcEnv) args pos
+        (NativeFunc paramLen func) -> do
+            nativeFuncCall env pos args paramLen func
         _ -> throwE $ throwWithOffset pos (callNonFuncErr value)
     where
         evalArgs :: Env -> [Exp] -> ExceptT Exception IO [Value]
@@ -294,60 +338,6 @@ initVars stmt = Seq (getDecs stmt ++ [stmt])
         getDecs (Seq []) = []
         getDecs (Seq (x:xs)) = getDecs x ++ getDecs (Seq xs)
         getDecs _ = []
-
-data InterpretErrorType = InvalidRedeclarationOfVar String 
-    | RefBeforeInit String
-    | RefMutVar String
-    | UnboundErr String
-    | ReassignImmutableErr String
-    | BinOpTypeErr String String String
-    | UnOpTypeErr String String
-    | WrongTypeErr String String
-    | CallNonFuncErr String
-    | ArityErr Int Int
-    deriving (Eq, Ord, Show)
-
-data InterpretError = InterpretError { errType :: InterpretErrorType, offset :: Position }
-    deriving (Eq, Ord, Show)
-
-binOpTypeErr :: String -> Value -> Value -> InterpretErrorType
-binOpTypeErr op x y =
-    let v1 = valueTypeLookup x
-        v2 = valueTypeLookup y
-    in BinOpTypeErr op v1 v2
-
-unOpTypeErr :: String -> Value -> InterpretErrorType
-unOpTypeErr op x =
-    let v1 = valueTypeLookup x
-    in UnOpTypeErr op v1
-
-callNonFuncErr :: Value -> InterpretErrorType
-callNonFuncErr = CallNonFuncErr . valueTypeLookup
-
-
-instance ShowErrorComponent InterpretError where
-    showErrorComponent a = case errType a of
-        (InvalidRedeclarationOfVar var) -> "invalid redeclaration of `" ++ var ++ "`"
-        (RefBeforeInit var) -> "attempt to reference variable `" ++ var ++ "` before it was initialized"
-        (RefMutVar var) -> "cannot reference mutable variable `" ++ var ++ "` declared in outer scope"
-        (UnboundErr var) -> "unbound variable `" ++ var ++ "`"
-        (BinOpTypeErr op v1 v2) -> "cannot " ++ op ++ " values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
-        (UnOpTypeErr op v1) -> "cannot " ++ op ++ " value of type `" ++ v1 ++ "`"
-        (ReassignImmutableErr var) -> "cannot reassign immutable variable `" ++ var ++ "`"
-        (WrongTypeErr x y) -> "cannot use value of type `" ++ x ++ "` where value of type `" ++ y ++ "` was expected"
-        (CallNonFuncErr x) -> "cannot call value of non function type `" ++ x ++ "`"
-        (ArityErr x y) -> "incorrect number of arguments passed to function" ++
-            "\n" ++ show x ++ " parameters expected but " ++ show y ++ " arguments passed in"
-    errorComponentLen a = posLength $ offset a
-
-throwWithOffset :: Position -> InterpretErrorType -> Exception
-throwWithOffset offset errType =
-    let interpretError = InterpretError errType offset
-    in InterpErr interpretError
-
-throwErrIf' :: Bool -> InterpretError -> Either Exception ()
-throwErrIf' False _ = return ()
-throwErrIf' True err = Left $ InterpErr err
 
 exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp pos) = do
@@ -408,7 +398,7 @@ runProgram env stmt = ExceptT $ do
         Left (ErrMsg msg) -> putStrLn msg >> return (return ())
 
 execNew :: Stmt -> ExceptT InterpretError IO ()
-execNew stmt = lift newEnv >>= \env -> runProgram env stmt
+execNew stmt = lift envWithNative >>= \env -> runProgram env stmt
 
 isVar :: Value -> Bool
 isVar Func {} = False

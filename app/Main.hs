@@ -6,6 +6,8 @@ import Interpret
 import Parser
 import Ast
 import Text.Megaparsec
+import InterpretError
+
 import qualified Data.Set as S
 import qualified Data.List.NonEmpty as NE
 import Control.Monad.Trans.Except

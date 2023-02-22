@@ -9,11 +9,20 @@ module Ast (
   getExpPosition,
   Env (..),
   Val (..),
+  Exception (..),
   Var
 ) where
   
 import Data.IORef
 import System.IO.Unsafe
+import Position
+import InterpretError
+import Control.Monad.Trans.Except
+
+data Exception = ErrMsg String
+    | ReturnExcept Env Exp
+    | InterpErr InterpretError
+    deriving Show
   
 type Var = String
 
@@ -34,8 +43,6 @@ data Function = Function {
   funcEnv :: Env
   }
 
-data Position = Position { posOffset :: Int, posLength :: Int } deriving (Eq, Ord, Show)
-
 data Stmt = VarAssign String Exp Position
     | VarReassign String Exp Position
     | LetAssign String Exp Position
@@ -53,9 +60,22 @@ data Value = Int Int
     | String String
     | Bool Bool
     | Func [String] Stmt Env
+    | NativeFunc Int ([(Value, Position)] -> (ExceptT Exception IO Value))
     | Void
     | Null
-    deriving Show
+
+instance Show Value where
+    show a = case a of
+        (Int n) -> show n
+        (Float f) -> show f
+        (String s) -> show s
+        (Bool b) -> show b
+        (Func {}) -> "<func>"
+        (NativeFunc {}) -> "<native_fn>"
+        (Array _) -> "Array"
+        Void -> "Void"
+        Null -> "Null"
+        
 
 isNull :: Value -> Bool
 isNull Null = True
@@ -103,5 +123,7 @@ valueTypeLookup v = case v of
     Float {} -> "Float"
     String {} -> "String"
     Bool {} -> "Bool"
+    Func {} -> "Function"
+    NativeFunc {} -> "Function"
     Void -> "Void"
     _ -> "Unknown type"
