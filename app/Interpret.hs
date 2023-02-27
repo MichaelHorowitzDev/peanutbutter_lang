@@ -141,14 +141,14 @@ callNonFuncErr = CallNonFuncErr . valueTypeLookup
 subscriptNonArrayErr :: Value -> InterpretErrorType
 subscriptNonArrayErr = SubscriptNonArray . valueTypeLookup
 
-nativeFuncCall :: Env -> Position -> [Exp] -> Int -> NativeFunction -> ExceptT Exception IO Value
-nativeFuncCall env pos exps n f = do
+nativeFuncCall :: Env -> Position -> [Exp] -> NativeFunction -> ExceptT Exception IO Value
+nativeFuncCall env pos exps native = do
     except testArity
     args <- evalArgs env exps
-    f args
+    runNativeFunc native args
     where
-        testArity = guardEither (length exps == n)
-            (throwWithOffset pos (ArityErr n (length exps)))
+        testArity = guardEither (length exps == funcArity native)
+            (throwWithOffset pos (ArityErr (funcArity native) (length exps)))
         evalArgs :: Env -> [Exp] -> ExceptT Exception IO [(Value, Position)]
         evalArgs env [] = return []
         evalArgs env (x:xs) = do
@@ -320,8 +320,8 @@ eval env (CallFunc exp args pos) = do
         (Func params stmts funcEnv) -> do
             args <- evalArgs env args
             funcCall env (Function params stmts funcEnv) args pos
-        (NativeFunc paramLen func) -> do
-            nativeFuncCall env pos args paramLen func
+        (NativeFunc native) -> do
+            nativeFuncCall env pos args native
         _ -> throwE $ throwWithOffset pos (callNonFuncErr value)
     where
         evalArgs :: Env -> [Exp] -> ExceptT Exception IO [Value]

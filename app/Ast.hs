@@ -14,6 +14,7 @@ module Ast (
   getExpPosition,
   Env (..),
   Val (..),
+  NativeFunction (..),
   Exception (..),
   Var
 ) where
@@ -33,6 +34,10 @@ data Exception = ErrMsg String
 type Var = String
 
 data Val = Val { value :: Value, mutable :: Bool } deriving Show
+data NativeFunction = NativeFunction { 
+    funcArity :: Int, 
+    runNativeFunc :: [(Value, Position)] -> ExceptT Exception IO Value 
+    }
 
 data Env = Env {
     varEnv :: IORef [(Var, Val)],
@@ -66,7 +71,7 @@ data Value = Int Int
     | String String
     | Bool Bool
     | Func [String] Stmt Env
-    | NativeFunc Int ([(Value, Position)] -> ExceptT Exception IO Value)
+    | NativeFunc NativeFunction
     | Array (V.Vector Value)
     | Void
     | Null

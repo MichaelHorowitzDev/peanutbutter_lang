@@ -11,6 +11,7 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Class
 import InterpretError
 import Data.Either.Extra
+import System.IO
 import qualified Data.Vector as V
 
 guardEither :: Bool -> a -> Either a ()
@@ -22,35 +23,52 @@ throwWithOffset offset errType =
     let interpretError = InterpretError errType offset
     in InterpErr interpretError
 
-type NativeFunction = [(Value, Position)] -> ExceptT Exception IO Value
-
 sqrtNative :: NativeFunction
-sqrtNative args = do
+sqrtNative = NativeFunction 1 $ \args -> do
     let (v, pos) = head args
-    f <- except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) "Float") (getFloat v)
+    f <- except $ getValueType getFloat v "Float" pos
     return (Float $ sqrt f)
 
 clockNative :: NativeFunction
-clockNative _ = do
+clockNative = NativeFunction 0 $ \_ -> do
     time <- lift (getCurrentTime <&> realToFrac . utctDayTime)
     return $ Float time
 
 vectorLengthNative :: NativeFunction
-vectorLengthNative args = do
+vectorLengthNative = NativeFunction 1 $ \args -> do
     let (v, pos) = head args
-    v <- except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) "List") (getArray v)
+    v <- except $ getValueType getArray v "List" pos
     return $ Int (V.length v)
 
-varFromFunc :: String -> Int -> NativeFunction -> (Var, Val)
-varFromFunc s arr f = (s, Val { value = NativeFunc arr f, mutable = False })
+getValueType :: (Value -> Maybe a) -> Value -> String -> Position -> Either Exception a
+getValueType f v expected pos = maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) expected) (f v)
 
-varsFromFuncs :: [(String, Int, NativeFunction)] -> [(Var, Val)]
+inputNative :: NativeFunction
+inputNative = NativeFunction 0 $ \_ -> do
+    lift $ hSetBuffering stdout NoBuffering
+    line <- lift getLine
+    return $ String line
+
+putStrNative :: NativeFunction
+putStrNative = NativeFunction 1 $ \args -> do
+    lift $ hSetBuffering stdout NoBuffering
+    let (v, pos) = head args
+    s <- except $ getValueType getString v "String" pos
+    lift (putStr s)
+    return Void
+
+varFromFunc :: String -> NativeFunction -> (Var, Val)
+varFromFunc s n = (s, Val { value = NativeFunc n, mutable = False })
+
+varsFromFuncs :: [(String, NativeFunction)] -> [(Var, Val)]
 varsFromFuncs [] = []
-varsFromFuncs ((s, arr, f):xs) = varFromFunc s arr f : varsFromFuncs xs
+varsFromFuncs ((s, n):xs) = varFromFunc s n : varsFromFuncs xs
 
-nativeFuncs :: [(String, Int, NativeFunction)]
+nativeFuncs :: [(String, NativeFunction)]
 nativeFuncs = [
-    ("sqrt", 1, sqrtNative),
-    ("clock", 0, clockNative),
-    ("length", 1, vectorLengthNative)
+    ("sqrt", sqrtNative),
+    ("clock", clockNative),
+    ("length", vectorLengthNative),
+    ("input", inputNative),
+    ("putStr", putStrNative)
     ]
