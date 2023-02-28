@@ -12,6 +12,8 @@ module Ast (
   Stmt (..),
   Position(..),
   getExpPosition,
+  getStmtPosition,
+  getStmtName,
   Env (..),
   Val (..),
   NativeFunction (..),
@@ -61,10 +63,39 @@ data Stmt = VarAssign String Exp Position
     | If [(Exp, Stmt)] Stmt Position
     | Seq [Stmt]
     | FuncDef String [String] Stmt Position
+    | ClassDef String Stmt Position
     | ReturnStmt Exp Position
     | CallExp Exp Position
     | Print Exp Position
     deriving Show
+
+getStmtName :: Stmt -> String
+getStmtName stmt = case stmt of
+    VarAssign {} -> "var assign"
+    LetAssign {} -> "let assign"
+    VarReassign {} -> "var reassign"
+    While {} -> "while"
+    If {} -> "if"
+    Seq {} -> "sequence"
+    FuncDef {} -> "function definition"
+    ClassDef {} -> "class definition"
+    ReturnStmt {} -> "return"
+    CallExp {} -> "expression call"
+    Print {} -> "print"
+
+
+getStmtPosition :: Stmt -> Maybe Position
+getStmtPosition (VarAssign _ _ pos) = Just pos
+getStmtPosition (VarReassign _ _ pos) = Just pos
+getStmtPosition (LetAssign _ _ pos) = Just pos
+getStmtPosition (While _ _ pos) = Just pos
+getStmtPosition (If _ _ pos) = Just pos
+getStmtPosition (FuncDef _ _ _ pos) = Just pos
+getStmtPosition (ClassDef _ _ pos) = Just pos
+getStmtPosition (ReturnStmt _ pos) = Just pos
+getStmtPosition (CallExp _ pos) = Just pos
+getStmtPosition (Print _ pos) = Just pos
+getStmtPosition (Seq _) = Nothing
     
 data Value = Int Int
     | Float Float
@@ -72,6 +103,8 @@ data Value = Int Int
     | Bool Bool
     | Func [String] Stmt Env
     | NativeFunc NativeFunction
+    | Class [String] Env
+    | ClassInstance Env
     | Array (V.Vector Value)
     | Void
     | Null
@@ -104,6 +137,7 @@ instance Show Value where
         (Bool b) -> show b
         (Func {}) -> "<func>"
         (NativeFunc {}) -> "<native_fn>"
+        (Class {}) -> "<class>"
         (Array vector) -> "Array " ++ show vector
         Void -> "Void"
         Null -> "Null"    
@@ -130,6 +164,7 @@ data Exp = Add Exp Exp Position
     | Subscript Exp Exp Position
     | Lit Value Position
     | Var String Position
+    | Getter Exp String Position
     deriving Show
 
 getExpPosition :: Exp -> Position
@@ -160,6 +195,9 @@ valueTypeLookup v = case v of
     Bool {} -> "Bool"
     Func {} -> "Function"
     NativeFunc {} -> "Function"
+    Class {} -> "Class"
+    ClassInstance {} -> "Object"
     Void -> "Void"
     Array {} -> "Array"
     Null -> "Null"
+    _ -> "Unknown Type"

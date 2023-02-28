@@ -12,6 +12,7 @@ import Text.Megaparsec
 import InterpretError
 import NativeFunc
 import qualified Data.Vector as V
+import Data.List (find)
 
 type Prog = Stmt
 
@@ -41,6 +42,11 @@ varLookup env var offset = do
     except $ throwErrIf' (not scoped && mutable val) (InterpretError (RefMutVar var) offset)
     
     return $ value val
+
+getterLookup :: Env -> Var -> Position -> ExceptT Exception IO Value
+getterLookup env@(Env store _) var offset = do
+    result <- lift $ readIORef store >>= return . lookup var
+    except $ maybeToEither (throwWithOffset offset (UnboundErr var)) (value <$> result)
 
 member :: Eq a => a -> [(a, b)] -> Bool
 member a = foldr (\x acc -> a == fst x || acc) False
@@ -140,6 +146,9 @@ callNonFuncErr = CallNonFuncErr . valueTypeLookup
 
 subscriptNonArrayErr :: Value -> InterpretErrorType
 subscriptNonArrayErr = SubscriptNonArray . valueTypeLookup
+
+callMemberNonObject :: Value -> InterpretErrorType
+callMemberNonObject = CallMemberNonObject . valueTypeLookup
 
 nativeFuncCall :: Env -> Position -> [Exp] -> NativeFunction -> ExceptT Exception IO Value
 nativeFuncCall env pos exps native = do
@@ -264,6 +273,8 @@ printVal (NativeFunc {}) = putStrLn "<native_fn>"
 printVal (Array v) = print v
 printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
+printVal (Class {}) = putStrLn "<class>"
+printVal v = putStrLn $ "cannot print value: " ++ show v
 
 eval :: Env -> Exp -> ExceptT Exception IO Value
 eval _ (Lit n pos) = return n
@@ -322,6 +333,7 @@ eval env (CallFunc exp args pos) = do
             funcCall env (Function params stmts funcEnv) args pos
         (NativeFunc native) -> do
             nativeFuncCall env pos args native
+        (Class params classEnv) -> return $ ClassInstance classEnv
         _ -> throwE $ throwWithOffset pos (callNonFuncErr value)
     where
         evalArgs :: Env -> [Exp] -> ExceptT Exception IO [Value]
@@ -349,6 +361,11 @@ eval env (Subscript exp sub pos) = do
     index <- eval env sub >>= \index -> except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
     except $ guardEither (V.length vector > index && index >= 0) (throwWithOffset pos $ IndexOutOfBounds index (V.length vector))
     return $ vector V.! index
+eval env (Getter exp var pos) = do
+    value <- eval env exp
+    case value of
+        ClassInstance env -> getterLookup env var pos
+        _ -> throwE $ throwWithOffset pos $ callMemberNonObject value
 
 initVars :: Stmt -> Stmt
 initVars stmt = Seq (getDecs stmt ++ [stmt])
@@ -396,6 +413,17 @@ exec env (FuncDef s args stmt pos) = do
     let varInits = initVars stmt
     let function = Func args varInits env
     lift $ addLet env (s, function)
+exec env (ClassDef s stmt pos) = do
+    scoped <- lift (s `inScope` env)
+    except $ guardEither (not scoped) (throwWithOffset pos (InvalidRedeclarationOfVar s))
+    case find (not . validClassStmt) (foldableStmt stmt) of
+        Just stmt -> do
+            -- following should be fixed to avoid using fromJust
+            throwE $ throwWithOffset (fromJust $ getStmtPosition stmt) (InvalidClassStmt $ getStmtName stmt)
+        Nothing -> return ()
+    env' <- lift (addScope env) >>= \env' -> exec env' stmt
+    let classDec = Class [] env'
+    lift $ addLet env (s, classDec)
 exec env (CallExp exp pos) = case exp of
     (CallFunc name args pos) -> eval env exp >> return env
     _ -> eval env exp >> return env
@@ -404,6 +432,19 @@ exec env (Print exp pos) = do
     val <- eval env exp
     lift (printVal val)
     return env
+
+foldableStmt :: Stmt -> [Stmt]
+foldableStmt (Seq []) = []
+foldableStmt (Seq (x:xs)) = foldableStmt x ++ foldableStmt (Seq xs)
+foldableStmt s = [s]
+
+validClassStmt :: Stmt -> Bool
+validClassStmt stmt = case stmt of
+    LetAssign {} -> True
+    VarAssign {} -> True
+    FuncDef {} -> True
+    ClassDef {} -> True
+    _ -> False
 
 performTransformations :: Stmt -> Stmt
 performTransformations = initVars

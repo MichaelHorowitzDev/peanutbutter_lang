@@ -136,6 +136,15 @@ subscript = do
     char ']'
     return exp
 
+getter :: Parser String
+getter = do
+    offset <- getOffset
+    char '.'
+    space
+    iden <- parseIdentifier
+    len <- getOffset <&> subtract offset
+    return iden
+
 parseCallFunc :: Parser Exp
 parseCallFunc = do
     offset <- getOffset
@@ -146,7 +155,7 @@ parseCallFunc = do
         flattenedCalls :: Exp -> Parser Exp
         flattenedCalls exp = (do
             offset <- getOffset
-            op <- (funcCall <&> CallFunc exp) <|> (subscript <&> Subscript exp)
+            op <- (funcCall <&> CallFunc exp) <|> (subscript <&> Subscript exp) <|> (getter <&> Getter exp)
             len <- getOffset <&> subtract offset
             flattenedCalls $ op (Position offset len)
             ) <|> return exp
@@ -323,6 +332,13 @@ parseFuncDef = do
             first <- try parseIdentifier
             rest <- many $ lexeme (char ',') >> lexeme parseIdentifier
             return (first:rest)
+
+parseClassDef :: Parser (Position -> Stmt)
+parseClassDef = do
+    string "class"
+    space1
+    iden <- lexeme parseIdentifier
+    ClassDef iden <$> parseScope
             
 parseReturnStmt :: Parser (Position -> Stmt)
 parseReturnStmt = (string "return" >> space1 >> parseExp) <&> ReturnStmt
@@ -335,8 +351,9 @@ parseStmt = do
     offset <- getOffset
     stmt <- parseVarAssign
         <|> parseLetAssign
-        <|> parseWhile 
+        <|> parseWhile
         <|> parseFuncDef
+        <|> parseClassDef
         <|> parseIf
         <|> parsePrint
         <|> parseReturnStmt 

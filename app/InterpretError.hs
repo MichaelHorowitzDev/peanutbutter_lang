@@ -15,6 +15,8 @@ data InterpretErrorType = InvalidRedeclarationOfVar String
     | SubscriptNonArray String
     | IndexOutOfBounds Int Int
     | ArityErr Int Int
+    | InvalidClassStmt String
+    | CallMemberNonObject String
     deriving (Eq, Ord, Show)
 
 data InterpretError = InterpretError { errType :: InterpretErrorType, offset :: Position }
@@ -35,4 +37,6 @@ instance ShowErrorComponent InterpretError where
         (IndexOutOfBounds x y) -> "attempt to index list but index `" ++ show x ++ "` is outside bounds range of (0, " ++ show (y - 1) ++ ")"
         (ArityErr x y) -> "incorrect number of arguments passed to function" ++
             "\n" ++ show x ++ " parameters expected but " ++ show y ++ " arguments passed in"
+        (InvalidClassStmt s) -> "invalid `" ++ s ++ "` statement found in class declaration \n"
+        (CallMemberNonObject v1) -> "attempt to call member on non object type `" ++ v1 ++ "`"
     errorComponentLen a = posLength $ offset a
