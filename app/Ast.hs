@@ -135,6 +135,7 @@ instance Show Value where
         (Func {}) -> "<func>"
         (NativeFunc {}) -> "<native_fn>"
         (Class {}) -> "<class>"
+        (ClassInstance {}) -> "<object>"
         (Array vector) -> "Array " ++ show vector
         Void -> "Void"
         Null -> "Null"    

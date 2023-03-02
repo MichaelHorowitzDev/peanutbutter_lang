@@ -274,6 +274,7 @@ printVal (Array v) = print v
 printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
 printVal (Class {}) = putStrLn "<class>"
+printVal (ClassInstance {}) = putStrLn "<object>"
 printVal v = putStrLn $ "cannot print value: " ++ show v
 
 eval :: Env -> Exp -> ExceptT Exception IO Value
