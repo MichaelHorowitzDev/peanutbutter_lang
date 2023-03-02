@@ -82,6 +82,8 @@ varReassign env@(Env vStore prev) pair@(var, val) pos = do
     val <- except $ maybeToEither (throwWithOffset pos (UnboundErr var)) result
     except $ guardEither (mutable val) (throwWithOffset pos (ReassignImmutableErr var))
     except $ guardEither (not $ isNull (value val)) (throwWithOffset pos (RefBeforeInit var))
+    scoped <- lift $ var `inScope` env
+    except $ throwErrIf' (not scoped && mutable val) (InterpretError (ReassignMutVar var) pos)
     lift $ reassign env pair
     where
         reassign :: Env -> (Var, Value) -> IO Env

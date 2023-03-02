@@ -6,6 +6,7 @@ import Position
 data InterpretErrorType = InvalidRedeclarationOfVar String
     | RefBeforeInit String
     | RefMutVar String
+    | ReassignMutVar String
     | UnboundErr String
     | ReassignImmutableErr String
     | BinOpTypeErr String String String
@@ -27,6 +28,7 @@ instance ShowErrorComponent InterpretError where
         (InvalidRedeclarationOfVar var) -> "invalid redeclaration of `" ++ var ++ "`"
         (RefBeforeInit var) -> "attempt to reference variable `" ++ var ++ "` before it was initialized"
         (RefMutVar var) -> "cannot reference mutable variable `" ++ var ++ "` declared in outer scope"
+        (ReassignMutVar var) -> "cannot reassign mutable variable `" ++ var ++ "` declared in outer scope"
         (UnboundErr var) -> "unbound variable `" ++ var ++ "`"
         (BinOpTypeErr op v1 v2) -> "cannot " ++ op ++ " values of type `" ++ v1 ++ "` and type `" ++ v2 ++ "`"
         (UnOpTypeErr op v1) -> "cannot " ++ op ++ " value of type `" ++ v1 ++ "`"
