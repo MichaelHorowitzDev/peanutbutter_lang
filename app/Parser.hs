@@ -287,16 +287,16 @@ parseIf = do
     elses <- elseIfs
     If ((expStmt, stmts) : elses) <$> else'
     where
-        elseIfs :: Parser [(Exp, Stmt)]
+        elseIfs :: Parser [(Exp, [Stmt])]
         elseIfs = many $ do
             lexeme (string "else if") >> space1
             expStmt <- lexeme parseExp
             stmts <- parseScope
             return (expStmt, stmts)
-        else' :: Parser Stmt
+        else' :: Parser [Stmt]
         else' = try (do
             lexeme (string "else") >> space1
-            parseScope) <|> return (Seq [])
+            parseScope) <|> return []
     
 parseWhile :: Parser (Position -> Stmt)
 parseWhile = do
@@ -305,7 +305,7 @@ parseWhile = do
     expStmt <- lexeme parseExp
     While expStmt <$> parseScope
     
-parseScope :: Parser Stmt
+parseScope :: Parser [Stmt]
 parseScope = do
     lexeme (char '{')
     space
@@ -313,7 +313,7 @@ parseScope = do
     space
     lexeme (char '}')
     space
-    return (Seq stmts)
+    return stmts
     
 parseFuncDef :: Parser (Position -> Stmt)
 parseFuncDef = do
@@ -362,7 +362,7 @@ parseStmt = do
     len <- getOffset <&> subtract offset
     return $ stmt (Position offset len)
 
-parseProgram :: Parser Stmt
+parseProgram :: Parser [Stmt]
 parseProgram = do
     space
     stmts <- many (parseStmt >>= \stmt -> space >> return stmt)
@@ -370,7 +370,7 @@ parseProgram = do
     src <- getSourcePos
     space
     eof
-    return (Seq stmts)
+    return stmts
 
 testCallFunc = "var y = cube(x)"
 

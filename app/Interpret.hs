@@ -14,7 +14,7 @@ import NativeFunc
 import qualified Data.Vector as V
 import Data.List (find)
 
-type Prog = Stmt
+type Prog = [Stmt]
 
 newEnv :: IO Env
 newEnv = do
@@ -172,7 +172,7 @@ funcCall env@(Env store prev) function args pos = do
     except $ testArity params args
     let vars = zip params args
     env' <- lift $ addConstScope funcEnv vars
-    ExceptT $ runExceptT (exec env' stmts) >>= \result -> case result of
+    ExceptT $ runExceptT (execStmts env' stmts) >>= \result -> case result of
             Right env'' -> return $ Right Void
             Left (ReturnExcept env'' expStmt) -> runExceptT $ eval env'' expStmt
             Left a -> return $ Left a
@@ -343,7 +343,7 @@ eval env (CallFunc exp args pos) = do
             vals <- evalArgs env xs
             return (val:vals)
 eval env (Lambda params exp pos) = do
-    let function = Func params (ReturnStmt exp (Position 0 0)) env
+    let function = Func params [ReturnStmt exp (Position 0 0)] env
     return function
 eval env (ArrayDef exps pos) = do
     vals <- evalExps env exps
@@ -367,15 +367,15 @@ eval env (Getter exp var pos) = do
         ClassInstance env -> getterLookup env var pos
         _ -> throwE $ throwWithOffset pos $ callMemberNonObject value
 
-initVars :: Stmt -> Stmt
-initVars stmt = Seq (getDecs stmt ++ [stmt])
+initVars :: [Stmt] -> [Stmt]
+initVars stmts = getDecs stmts ++ stmts
     where
-        getDecs :: Stmt -> [Stmt]
-        getDecs (VarAssign s _ _) = [VarAssign s (Lit Null (Position 0 0)) (Position 0 0)]
-        getDecs (LetAssign s _ _) = [LetAssign s (Lit Null (Position 0 0)) (Position 0 0)]
-        getDecs (Seq []) = []
-        getDecs (Seq (x:xs)) = getDecs x ++ getDecs (Seq xs)
-        getDecs _ = []
+        getDecs :: [Stmt] -> [Stmt]
+        getDecs [] = []
+        getDecs (x:xs) = case x of
+            (VarAssign s _ _) -> VarAssign s (Lit Null (Position 0 0)) (Position 0 0) : getDecs xs
+            (LetAssign s _ _) -> LetAssign s (Lit Null (Position 0 0)) (Position 0 0) : getDecs xs
+            _ -> getDecs xs
 
 exec :: Env -> Stmt -> ExceptT Exception IO Env
 exec env (VarAssign s exp pos) = do
@@ -391,37 +391,36 @@ exec env (LetAssign s exp pos) = do
 exec env (VarReassign s exp pos) = do
     value <- eval env exp
     varReassign env (s, value) pos
-exec env (While exp stmt pos) = do
+exec env (While exp stmts pos) = do
     value <- eval env exp
     case value of
-        (Bool True) -> exec env (Seq [stmt, While exp stmt pos])
+        (Bool True) -> do
+            env' <- execStmts env stmts
+            execStmts env' [While exp stmts pos]
         (Bool False) -> return env
         v -> throwE $ throwWithOffset (getExpPosition exp) (WrongTypeErr (valueTypeLookup v) "Bool")
-exec env (If [] stmt pos) = exec env stmt
+exec env (If [] stmt pos) = execStmts env stmt
 exec env (If ((exp, stmt):xs) stmt' pos) = do
     value <- eval env exp
     case value of
-        (Bool True) -> exec env stmt
+        (Bool True) -> execStmts env stmt
         (Bool False) -> exec env $ If xs stmt' pos
         v -> throwE $ throwWithOffset (getExpPosition exp) (WrongTypeErr (valueTypeLookup v) "Bool")
     return env
-exec env (Seq []) = return env
-exec env (Seq (x:xs)) = exec env x >>= \env' -> exec env' (Seq xs)
 exec env (FuncDef s args stmt pos) = do
     scoped <- lift (s `inScope` env)
     except $ guardEither (not scoped) (throwWithOffset pos (InvalidRedeclarationOfVar s))
     let varInits = initVars stmt
     let function = Func args varInits env
     lift $ addLet env (s, function)
-exec env (ClassDef s stmt pos) = do
+exec env (ClassDef s stmts pos) = do
     scoped <- lift (s `inScope` env)
     except $ guardEither (not scoped) (throwWithOffset pos (InvalidRedeclarationOfVar s))
-    case find (not . validClassStmt) (foldableStmt stmt) of
+    case find (not . validClassStmt) stmts of
         Just stmt -> do
-            -- following should be fixed to avoid using fromJust
-            throwE $ throwWithOffset (fromJust $ getStmtPosition stmt) (InvalidClassStmt $ getStmtName stmt)
+            throwE $ throwWithOffset (getStmtPosition stmt) (InvalidClassStmt $ getStmtName stmt)
         Nothing -> return ()
-    env' <- lift (addScope env) >>= \env' -> exec env' stmt
+    env' <- lift (addScope env) >>= \env' -> execStmts env' stmts
     let classDec = Class [] env'
     lift $ addLet env (s, classDec)
 exec env (CallExp exp pos) = case exp of
@@ -433,10 +432,8 @@ exec env (Print exp pos) = do
     lift (printVal val)
     return env
 
-foldableStmt :: Stmt -> [Stmt]
-foldableStmt (Seq []) = []
-foldableStmt (Seq (x:xs)) = foldableStmt x ++ foldableStmt (Seq xs)
-foldableStmt s = [s]
+execStmts :: Env -> [Stmt] -> ExceptT Exception IO Env
+execStmts = foldM exec
 
 validClassStmt :: Stmt -> Bool
 validClassStmt stmt = case stmt of
@@ -446,20 +443,20 @@ validClassStmt stmt = case stmt of
     ClassDef {} -> True
     _ -> False
 
-performTransformations :: Stmt -> Stmt
+performTransformations :: [Stmt] -> [Stmt]
 performTransformations = initVars
 
-runProgram :: Env -> Stmt -> ExceptT InterpretError IO ()
+runProgram :: Env -> Prog -> ExceptT InterpretError IO ()
 runProgram env stmt = ExceptT $ do
     let transformed = performTransformations stmt
-    result <- runExceptT $ exec env transformed
+    result <- runExceptT $ execStmts env transformed
     case result of
         Right _ -> return $ return ()
         Left (InterpErr err) -> return $ Left err
         Left (ReturnExcept _ _) -> putStrLn "unexpected return statement not nested in function" >> return (return ())
         Left (ErrMsg msg) -> putStrLn msg >> return (return ())
 
-execNew :: Stmt -> ExceptT InterpretError IO ()
+execNew :: Prog -> ExceptT InterpretError IO ()
 execNew stmt = lift envWithNative >>= \env -> runProgram env stmt
 
 isVar :: Value -> Bool

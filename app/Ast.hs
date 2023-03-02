@@ -52,18 +52,17 @@ instance (Show a) => Show (IORef a) where
     
 data Function = Function {
   funcParams :: [String],
-  funcStmts :: Stmt,
+  funcStmts :: [Stmt],
   funcEnv :: Env
   }
 
 data Stmt = VarAssign String Exp Position
     | VarReassign String Exp Position
     | LetAssign String Exp Position
-    | While Exp Stmt Position
-    | If [(Exp, Stmt)] Stmt Position
-    | Seq [Stmt]
-    | FuncDef String [String] Stmt Position
-    | ClassDef String Stmt Position
+    | While Exp [Stmt] Position
+    | If [(Exp, [Stmt])] [Stmt] Position
+    | FuncDef String [String] [Stmt] Position
+    | ClassDef String [Stmt] Position
     | ReturnStmt Exp Position
     | CallExp Exp Position
     | Print Exp Position
@@ -76,7 +75,6 @@ getStmtName stmt = case stmt of
     VarReassign {} -> "var reassign"
     While {} -> "while"
     If {} -> "if"
-    Seq {} -> "sequence"
     FuncDef {} -> "function definition"
     ClassDef {} -> "class definition"
     ReturnStmt {} -> "return"
@@ -84,24 +82,23 @@ getStmtName stmt = case stmt of
     Print {} -> "print"
 
 
-getStmtPosition :: Stmt -> Maybe Position
-getStmtPosition (VarAssign _ _ pos) = Just pos
-getStmtPosition (VarReassign _ _ pos) = Just pos
-getStmtPosition (LetAssign _ _ pos) = Just pos
-getStmtPosition (While _ _ pos) = Just pos
-getStmtPosition (If _ _ pos) = Just pos
-getStmtPosition (FuncDef _ _ _ pos) = Just pos
-getStmtPosition (ClassDef _ _ pos) = Just pos
-getStmtPosition (ReturnStmt _ pos) = Just pos
-getStmtPosition (CallExp _ pos) = Just pos
-getStmtPosition (Print _ pos) = Just pos
-getStmtPosition (Seq _) = Nothing
+getStmtPosition :: Stmt -> Position
+getStmtPosition (VarAssign _ _ pos) = pos
+getStmtPosition (VarReassign _ _ pos) = pos
+getStmtPosition (LetAssign _ _ pos) = pos
+getStmtPosition (While _ _ pos) = pos
+getStmtPosition (If _ _ pos) = pos
+getStmtPosition (FuncDef _ _ _ pos) = pos
+getStmtPosition (ClassDef _ _ pos) = pos
+getStmtPosition (ReturnStmt _ pos) = pos
+getStmtPosition (CallExp _ pos) = pos
+getStmtPosition (Print _ pos) = pos
     
 data Value = Int Int
     | Float Float
     | String String
     | Bool Bool
-    | Func [String] Stmt Env
+    | Func [String] [Stmt] Env
     | NativeFunc NativeFunction
     | Class [String] Env
     | ClassInstance Env
