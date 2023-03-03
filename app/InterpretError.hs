@@ -18,6 +18,7 @@ data InterpretErrorType = InvalidRedeclarationOfVar String
     | ArityErr Int Int
     | InvalidClassStmt String
     | CallMemberNonObject String
+    | DuplicateFuncArgs
     deriving (Eq, Ord, Show)
 
 data InterpretError = InterpretError { errType :: InterpretErrorType, offset :: Position }
@@ -41,4 +42,5 @@ instance ShowErrorComponent InterpretError where
             "\n" ++ show x ++ " parameters expected but " ++ show y ++ " arguments passed in"
         (InvalidClassStmt s) -> "invalid `" ++ s ++ "` statement found in class declaration \n"
         (CallMemberNonObject v1) -> "attempt to call member on non object type `" ++ v1 ++ "`"
+        DuplicateFuncArgs -> "duplicate function arguments found"
     errorComponentLen a = posLength $ offset a

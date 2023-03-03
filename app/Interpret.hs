@@ -13,6 +13,7 @@ import InterpretError
 import NativeFunc
 import qualified Data.Vector as V
 import Data.List (find)
+import Data.List.Extra (nubOrd)
 
 type Prog = [Stmt]
 
@@ -346,6 +347,7 @@ eval env (CallFunc exp args pos) = do
             vals <- evalArgs env xs
             return (val:vals)
 eval env (Lambda params exp pos) = do
+    except $ guardEither (nubOrd params == params) (throwWithOffset pos DuplicateFuncArgs)
     let function = Func params [ReturnStmt exp (Position 0 0)] env
     return function
 eval env (ArrayDef exps pos) = do
@@ -413,6 +415,7 @@ exec env (If ((exp, stmt):xs) stmt' pos) = do
 exec env (FuncDef s args stmt pos) = do
     scoped <- lift (s `inScope` env)
     except $ guardEither (not scoped) (throwWithOffset pos (InvalidRedeclarationOfVar s))
+    except $ guardEither (nubOrd args == args) (throwWithOffset pos DuplicateFuncArgs)
     let varInits = initVars stmt
     let function = Func args varInits env
     lift $ addLet env (s, function)
