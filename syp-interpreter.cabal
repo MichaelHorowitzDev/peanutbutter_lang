@@ -16,9 +16,16 @@ executable syp-interpreter
         Interpret
         Ast
         Parser
+        NativeFunc
+        Position
+        InterpretError
     default-language: Haskell2010
     build-depends:
         base -any,
         extra -any,
         transformers -any,
-        megaparsec -any
+        megaparsec -any,
+        containers,
+        vector,
+        time,
+        mtl
