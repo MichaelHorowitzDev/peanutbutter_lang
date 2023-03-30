@@ -20,7 +20,7 @@ module Ast (
   Exception (..),
   Var
 ) where
-  
+
 import Data.IORef
 import System.IO.Unsafe
 import Position
@@ -32,13 +32,13 @@ data Exception = ErrMsg String
     | ReturnExcept Env Exp
     | InterpErr InterpretError
     deriving Show
-  
+
 type Var = String
 
 data Val = Val { value :: Value, mutable :: Bool } deriving Show
-data NativeFunction = NativeFunction { 
-    funcArity :: Int, 
-    runNativeFunc :: [(Value, Position)] -> ExceptT Exception IO Value 
+data NativeFunction = NativeFunction {
+    funcArity :: Int,
+    runNativeFunc :: [(Value, Position)] -> ExceptT Exception IO Value
     }
 
 data Env = Env {
@@ -49,7 +49,7 @@ data Env = Env {
 
 instance (Show a) => Show (IORef a) where
     show a = show (unsafePerformIO (readIORef a))
-    
+
 data Function = Function {
   funcParams :: [String],
   funcStmts :: [Stmt],
@@ -93,7 +93,7 @@ getStmtPosition (ClassDef _ _ pos) = pos
 getStmtPosition (ReturnStmt _ pos) = pos
 getStmtPosition (CallExp _ pos) = pos
 getStmtPosition (Print _ pos) = pos
-    
+
 data Value = Int Int
     | Float Float
     | String String
@@ -138,7 +138,7 @@ instance Show Value where
         (ClassInstance {}) -> "<object>"
         (Array vector) -> "Array " ++ show vector
         Void -> "Void"
-        Null -> "Null"    
+        Null -> "Null"
 
 isNull :: Value -> Bool
 isNull Null = True
