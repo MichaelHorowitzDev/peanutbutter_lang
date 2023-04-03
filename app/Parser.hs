@@ -374,11 +374,3 @@ parseProgram = do
     space
     eof
     return stmts
-
-testCallFunc = "var y = cube(x)"
-
-testThing = "func factorial(x) {\nvar total = 1\nwhile x > 1 {} }"
-
-testOtherThing = "while true { func fac() {} }"
-
-exampleText = "!=true"
