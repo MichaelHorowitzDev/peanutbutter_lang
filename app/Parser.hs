@@ -1,7 +1,7 @@
 module Parser (
  parseProgram
 ) where
-    
+
 --import qualified Lexer as T
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -11,12 +11,12 @@ import Control.Monad
 import Data.Functor
 import Ast
 import qualified Data.Vector as V
-    
+
 type Parser = Parsec Void String
 
 lexeme :: Parser a -> Parser a
 lexeme = (space >>)
-    
+
 lexeme1 :: Parser a -> Parser a
 lexeme1 = (space1 >>)
 
@@ -26,7 +26,7 @@ parseNum = do
     num <- do
         char '-'
         int <- intPart
-        (floatPart >>= \float -> return $ Lit $ Float $ negate (read $ int ++ "." ++ float)) 
+        (floatPart >>= \float -> return $ Lit $ Float $ negate (read $ int ++ "." ++ float))
             <|> return (Lit $ Int $ negate (read int))
         <|> do
             int <- intPart
@@ -52,7 +52,7 @@ parseString = char '\"' *> manyTill L.charLiteral (char '\"')
 
 parseIdentifier :: Parser String
 parseIdentifier = do
-    first <- letterChar 
+    first <- letterChar
     rest <- many (letterChar <|> digitChar <|> char '_')
     return (first:rest)
 
@@ -159,7 +159,7 @@ parseCallFunc = do
             len <- getOffset <&> subtract offset
             flattenedCalls $ op (Position offset len)
             ) <|> return exp
-        
+
 parseUnary :: Parser Exp
 parseUnary = do
     offset <- getOffset
@@ -183,7 +183,7 @@ parseFactor = do
             len <- getOffset <&> subtract offset
             flattenedFactor offset (op p p1 (Position offset len))
             <|> return p
-             
+
 parseTerm :: Parser Exp
 parseTerm = do
     space
@@ -205,9 +205,9 @@ parseComparison = do
     offset <- getOffset
     t <- parseTerm
     (do
-        op <- try $ lexeme $ (string ">=" $> GreaterEqual) 
-                <|> (string ">" $> Greater) 
-                <|> (string "<=" $> LessEqual) 
+        op <- try $ lexeme $ (string ">=" $> GreaterEqual)
+                <|> (string ">" $> Greater)
+                <|> (string "<=" $> LessEqual)
                 <|> (string "<" $> Less)
         t1 <- parseTerm
         len <- getOffset <&> subtract offset
@@ -223,7 +223,7 @@ parseEquality = do
         e1 <- parseComparison
         len <- getOffset <&> subtract offset
         return (op c e1 (Position offset len))) <|> return c
-            
+
 parseLambda :: Parser Exp
 parseLambda = (do
     offset <- getOffset
@@ -267,18 +267,18 @@ parseLetAssign = do
     char '=' <|> fail "no `=` found in variable assignment"
     space
     LetAssign iden <$> parseExp <|> fail "no right hand side of equation"
-    
+
 guardError :: Bool -> String -> Parser ()
 guardError True s = fail s
 guardError False s = return ()
-    
+
 parseVarReassign :: Parser (Position -> Stmt)
 parseVarReassign = do
     iden <- parseIdentifier
     guardError (iden == "var") "unexpected `var` keyword found in variable reassign"
     lexeme (char '=')
     VarReassign iden <$> parseExp
-    
+
 parseIf :: Parser (Position -> Stmt)
 parseIf = do
     string "if" >> space1
@@ -297,14 +297,14 @@ parseIf = do
         else' = try (do
             lexeme (string "else") >> space1
             parseScope) <|> return []
-    
+
 parseWhile :: Parser (Position -> Stmt)
 parseWhile = do
     string "while"
     space1
     expStmt <- lexeme parseExp
     While expStmt <$> parseScope
-    
+
 parseScope :: Parser [Stmt]
 parseScope = do
     lexeme (char '{')
@@ -314,7 +314,7 @@ parseScope = do
     lexeme (char '}')
     space
     return stmts
-    
+
 parseFuncDef :: Parser (Position -> Stmt)
 parseFuncDef = do
     string "func"
@@ -339,7 +339,7 @@ parseClassDef = do
     space1
     iden <- lexeme parseIdentifier
     ClassDef iden <$> parseScope
-            
+
 parseReturnStmt :: Parser (Position -> Stmt)
 parseReturnStmt = (string "return" >> space1 >> parseExp) <&> ReturnStmt
 
@@ -356,7 +356,7 @@ parseStmt = do
         <|> parseClassDef
         <|> parseIf
         <|> parsePrint
-        <|> parseReturnStmt 
+        <|> parseReturnStmt
         <|> try parseVarReassign
         <|> parseCallExp
     len <- getOffset <&> subtract offset
