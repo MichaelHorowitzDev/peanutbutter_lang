@@ -495,7 +495,3 @@ runProgram env stmt = ExceptT $ do
 
 execNew :: Prog -> ExceptT InterpretError IO ()
 execNew stmt = liftIO envWithNative >>= \env -> runProgram env stmt
-
-isVar :: Value -> Bool
-isVar Func {} = False
-isVar _ = True
