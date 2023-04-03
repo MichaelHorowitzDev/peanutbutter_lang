@@ -248,9 +248,12 @@ parseExp = parseLambda
 parseCallExp :: Parser (Position -> Stmt)
 parseCallExp = CallExp <$> parseExp
 
+keyword :: String -> Parser ()
+keyword s = try (string s >> notFollowedBy alphaNumChar)
+
 parseVarAssign :: Parser (Position -> Stmt)
 parseVarAssign = do
-    string "var"
+    keyword "var"
     space1 <|> fail "expected assignment"
     iden <- parseIdentifier <|> fail "no valid identifier found"
     space
@@ -260,7 +263,7 @@ parseVarAssign = do
 
 parseLetAssign :: Parser (Position -> Stmt)
 parseLetAssign = do
-    string "let"
+    keyword "let"
     space1 <|> fail "expected assignment"
     iden <- parseIdentifier <|> fail "no valid identifier found"
     space
@@ -281,7 +284,7 @@ parseVarReassign = do
 
 parseIf :: Parser (Position -> Stmt)
 parseIf = do
-    string "if" >> space1
+    keyword "if" >> space1
     expStmt <- lexeme parseExp
     stmts <- parseScope
     elses <- elseIfs
@@ -300,7 +303,7 @@ parseIf = do
 
 parseWhile :: Parser (Position -> Stmt)
 parseWhile = do
-    string "while"
+    keyword "while"
     space1
     expStmt <- lexeme parseExp
     While expStmt <$> parseScope
@@ -317,7 +320,7 @@ parseScope = do
 
 parseFuncDef :: Parser (Position -> Stmt)
 parseFuncDef = do
-    string "func"
+    keyword "func"
     space1
     iden <- lexeme parseIdentifier
     char '('
@@ -335,16 +338,16 @@ parseFuncDef = do
 
 parseClassDef :: Parser (Position -> Stmt)
 parseClassDef = do
-    string "class"
+    keyword "class"
     space1
     iden <- lexeme parseIdentifier
     ClassDef iden <$> parseScope
 
 parseReturnStmt :: Parser (Position -> Stmt)
-parseReturnStmt = (string "return" >> space1 >> parseExp) <&> ReturnStmt
+parseReturnStmt = (keyword "return" >> space1 >> parseExp) <&> ReturnStmt
 
 parsePrint :: Parser (Position -> Stmt)
-parsePrint = (string "print" >> space1 >> parseExp) <&> Print
+parsePrint = (keyword "print" >> space1 >> parseExp) <&> Print
 
 parseStmt :: Parser Stmt
 parseStmt = do
