@@ -29,7 +29,7 @@ import Control.Monad.Trans.Except
 import qualified Data.Vector as V
 
 data Exception = ErrMsg String
-    | ReturnExcept Env Exp
+    | ReturnExcept Env Exp Position
     | InterpErr InterpretError
     deriving Show
 

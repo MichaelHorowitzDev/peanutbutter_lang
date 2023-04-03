@@ -198,7 +198,7 @@ funcCall function args pos = do
     env <- replaceEnv funcEnv (addConstStoreScope vars)
     lift $ ExceptT $ runExceptT (runReaderT (execStmts stmts) env) >>= \result -> case result of
         Right env -> return $ Right Void
-        Left (ReturnExcept env expStmt) -> runExceptT $ runReaderT (eval expStmt) env
+        Left (ReturnExcept env expStmt pos) -> runExceptT $ runReaderT (eval expStmt) env
         Left a -> return $ Left a
     where
         testArity :: [String] -> [Value] -> Interpreter ()
@@ -461,7 +461,7 @@ exec (CallExp exp pos) = case exp of
     _ -> eval exp >> getEnv
 exec (ReturnStmt expStmt pos) = do
     env <- getEnv
-    lift $ throwE $ ReturnExcept env expStmt
+    lift $ throwE $ ReturnExcept env expStmt pos
 exec (Print exp pos) = do
     val <- eval exp
     liftIO (printVal val)
@@ -491,6 +491,7 @@ runProgram env stmt = ExceptT $ do
     case result of
         Right _ -> return $ return ()
         Left (InterpErr err) -> return $ Left err
+        Left (ReturnExcept env expStmt pos) -> return $ Left (InterpretError ReturnNotInFunction pos)
 
 execNew :: Prog -> ExceptT InterpretError IO ()
 execNew stmt = liftIO envWithNative >>= \env -> runProgram env stmt

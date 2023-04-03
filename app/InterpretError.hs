@@ -19,6 +19,7 @@ data InterpretErrorType = InvalidRedeclarationOfVar String
     | InvalidClassStmt String
     | CallMemberNonObject String
     | DuplicateFuncArgs
+    | ReturnNotInFunction
     deriving (Eq, Ord, Show)
 
 data InterpretError = InterpretError { errType :: InterpretErrorType, offset :: Position }
@@ -43,4 +44,5 @@ instance ShowErrorComponent InterpretError where
         (InvalidClassStmt s) -> "invalid `" ++ s ++ "` statement found in class declaration \n"
         (CallMemberNonObject v1) -> "attempt to call member on non object type `" ++ v1 ++ "`"
         DuplicateFuncArgs -> "duplicate function arguments found"
+        ReturnNotInFunction -> "return statement not nested in function"
     errorComponentLen a = posLength $ offset a
