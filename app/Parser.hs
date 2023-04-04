@@ -341,7 +341,21 @@ parseClassDef = do
     keyword "class"
     space1
     iden <- lexeme parseIdentifier
-    ClassDef iden <$> parseScope
+    args <- parseArgs
+    ClassDef iden args <$> parseScope
+    where
+        parseArgs :: Parser [String]
+        parseArgs = (do
+            char '('
+            args <- (do
+                first <- parseIdentifier
+                rest <- many $ lexeme (char ',') >> lexeme parseIdentifier
+                return (first:rest)
+                ) <|> return []
+            char ')'
+            return args
+            )
+            <|> return []
 
 parseReturnStmt :: Parser (Position -> Stmt)
 parseReturnStmt = (keyword "return" >> space1 >> parseExp) <&> ReturnStmt

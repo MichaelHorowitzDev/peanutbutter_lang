@@ -190,6 +190,27 @@ nativeFuncCall pos exps native = do
             vals <- evalArgs xs
             return $ (val, pos) : vals
 
+instanceCall :: ([String], [Stmt], Env) -> [Value] -> Position -> Interpreter Value
+instanceCall (params, stmts, env) args pos = do
+    testArity params args
+    let vars = zip params args
+    env <- replaceEnv env (addConstStoreScope vars)
+    env <- replaceEnv env (execStmts stmts)
+    return $ ClassInstance env
+    where
+        testArity :: [String] -> [Value] -> Interpreter ()
+        testArity xs ys = (lift . except) $ guardEither (params == args)
+            (errWithOffset pos (ArityErr params args))
+            where
+                params = length xs
+                args = length ys
+        addConstStoreScope :: [(Var, Value)] -> Interpreter Env
+        addConstStoreScope store = do
+            env <- getEnv
+            let consts = map (\(x, y) -> (x, immutableVar y)) store
+            vars <- liftIO (newIORef consts)
+            return $ Env vars (Just env)
+
 funcCall :: Function -> [Value] -> Position -> Interpreter Value
 funcCall function args pos = do
     let (Function params stmts funcEnv) = function
@@ -358,7 +379,9 @@ eval (CallFunc exp args pos) = do
             funcCall (Function params stmts funcEnv) args pos
         (NativeFunc native) -> do
             nativeFuncCall pos args native
-        (Class params classEnv) -> return $ ClassInstance classEnv
+        (Class params stmts env) -> do
+            args <- evalArgs args
+            instanceCall (params, stmts, env) args pos
         _ -> throwErr (InterpretError (callNonFuncErr value) pos)
     where
         evalArgs :: [Exp] -> Interpreter [Value]
@@ -445,16 +468,15 @@ exec (FuncDef s args stmt pos) = do
     let varInits = initVars stmt
     let function = Func args varInits env
     addLet (s, function)
-exec (ClassDef s stmts pos) = do
+exec (ClassDef s args stmts pos) = do
     scoped <- inScope s
     lift $ except $ guardEither (not scoped) (errWithOffset pos (InvalidRedeclarationOfVar s))
     case find (not . validClassStmt) stmts of
         Just stmt -> do
             throwErr $ InterpretError (InvalidClassStmt $ getStmtName stmt) (getStmtPosition stmt)
         Nothing -> return ()
-    env <- addScope
-    env' <- replaceEnv env (execStmts stmts)
-    let classDec = Class [] env'
+    env <- getEnv
+    let classDec = Class args stmts env
     addLet (s, classDec)
 exec (CallExp exp pos) = case exp of
     (CallFunc name args pos) -> eval exp >> getEnv

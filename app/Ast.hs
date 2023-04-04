@@ -62,7 +62,7 @@ data Stmt = VarAssign String Exp Position
     | While Exp [Stmt] Position
     | If [(Exp, [Stmt])] [Stmt] Position
     | FuncDef String [String] [Stmt] Position
-    | ClassDef String [Stmt] Position
+    | ClassDef String [String] [Stmt] Position
     | ReturnStmt Exp Position
     | CallExp Exp Position
     | Print Exp Position
@@ -89,7 +89,7 @@ getStmtPosition (LetAssign _ _ pos) = pos
 getStmtPosition (While _ _ pos) = pos
 getStmtPosition (If _ _ pos) = pos
 getStmtPosition (FuncDef _ _ _ pos) = pos
-getStmtPosition (ClassDef _ _ pos) = pos
+getStmtPosition (ClassDef _ _ _ pos) = pos
 getStmtPosition (ReturnStmt _ pos) = pos
 getStmtPosition (CallExp _ pos) = pos
 getStmtPosition (Print _ pos) = pos
@@ -100,7 +100,7 @@ data Value = Int Int
     | Bool Bool
     | Func [String] [Stmt] Env
     | NativeFunc NativeFunction
-    | Class [String] Env
+    | Class [String] [Stmt] Env
     | ClassInstance Env
     | Array (V.Vector Value)
     | Void
