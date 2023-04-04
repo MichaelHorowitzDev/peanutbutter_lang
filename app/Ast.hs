@@ -102,7 +102,7 @@ data Value = Int Int
     | NativeFunc NativeFunction
     | Data [String] [Stmt] Env
     | DataInstance Env
-    | Array (V.Vector Value)
+    | Array (V.Vector Value) Int
     | Void
     | Null
 
@@ -122,8 +122,8 @@ getBool :: Value -> Maybe Bool
 getBool (Bool b) = Just b
 getBool _ = Nothing
 
-getArray :: Value -> Maybe (V.Vector Value)
-getArray (Array v) = Just v
+getArray :: Value -> Maybe (V.Vector Value, Int)
+getArray (Array v n) = Just (v, n)
 getArray _ = Nothing
 
 instance Show Value where
@@ -136,7 +136,7 @@ instance Show Value where
         (NativeFunc {}) -> "<native_fn>"
         (Data {}) -> "<data>"
         (DataInstance {}) -> "<data_instance>"
-        (Array vector) -> "Array " ++ show vector
+        (Array vector n) -> "Array " ++ show (V.take n vector)
         Void -> "Void"
         Null -> "Null"
 

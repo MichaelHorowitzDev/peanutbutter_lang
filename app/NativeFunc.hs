@@ -37,8 +37,33 @@ clockNative = NativeFunction 0 $ \_ -> do
 vectorLengthNative :: NativeFunction
 vectorLengthNative = NativeFunction 1 $ \args -> do
     let (v, pos) = head args
-    v <- except $ getValueType getArray v "List" pos
-    return $ Int (V.length v)
+    (v, n) <- except $ getValueType getArray v "List" pos
+    return $ Int n
+
+vectorAppendNative :: NativeFunction
+vectorAppendNative = NativeFunction 2 $ \args -> do
+    let (v, pos) = firstArg args
+    v@(vector, size) <- except $ getValueType getArray v "List" pos
+    let (value, pos) = secondArg args
+    let (newVector, newSize) = append v value
+    return $ Array newVector newSize
+    where
+        append :: (V.Vector Value, Int) -> Value -> (V.Vector Value, Int)
+        append (vector, size) value
+            | size < V.length vector =
+                let old = (V.toList $ V.take size vector)
+                    new = old ++ [value]
+                in (V.fromList new, size + 1)
+            | otherwise =
+                let old = V.toList vector
+                    new = old ++ [value]
+                in (V.fromList $ new ++ new, size + 1)
+
+firstArg :: [a] -> a
+firstArg = head
+
+secondArg :: [a] -> a
+secondArg = (!! 1)
 
 getValueType :: (Value -> Maybe a) -> Value -> String -> Position -> Either Exception a
 getValueType f v expected pos = maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) expected) (f v)
@@ -70,5 +95,6 @@ nativeFuncs = [
     ("clock", clockNative),
     ("length", vectorLengthNative),
     ("input", inputNative),
-    ("putStr", putStrNative)
+    ("putStr", putStrNative),
+    ("append", vectorAppendNative)
     ]

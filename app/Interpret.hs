@@ -315,7 +315,7 @@ printVal (Int n) = print n
 printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
 printVal (NativeFunc {}) = putStrLn "<native_fn>"
-printVal (Array v) = print v
+printVal (Array v n) = print (V.take n v)
 printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
 printVal (Data {}) = putStrLn "<data>"
@@ -397,7 +397,8 @@ eval (Lambda params exp pos) = do
     return function
 eval (ArrayDef exps pos) = do
     vals <- evalExps exps
-    return $ Array (V.fromList vals)
+    let vector = V.fromList vals
+    return $ Array vector (V.length vector)
     where
         evalExps :: [Exp] -> Interpreter [Value]
         evalExps [] = return []
@@ -407,9 +408,9 @@ eval (ArrayDef exps pos) = do
             return (val:vals)
 eval (Subscript exp sub pos) = do
     value <- eval exp
-    vector <- lift $ except $ maybeToEither (errWithOffset pos $ subscriptNonArrayErr value) (getArray value)
+    (vector, n) <- lift $ except $ maybeToEither (errWithOffset pos $ subscriptNonArrayErr value) (getArray value)
     index <- eval sub >>= \index -> lift $ except $ maybeToEither (errWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
-    lift $ except $ guardEither (V.length vector > index && index >= 0) (errWithOffset pos $ IndexOutOfBounds index (V.length vector))
+    lift $ except $ guardEither (n > index && index >= 0) (errWithOffset pos $ IndexOutOfBounds index n)
     return $ vector V.! index
 eval (Getter exp var pos) = do
     value <- eval exp
