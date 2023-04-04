@@ -336,13 +336,13 @@ parseFuncDef = do
             rest <- many $ lexeme (char ',') >> lexeme parseIdentifier
             return (first:rest)
 
-parseClassDef :: Parser (Position -> Stmt)
-parseClassDef = do
-    keyword "class"
+parseDataDef :: Parser (Position -> Stmt)
+parseDataDef = do
+    keyword "data"
     space1
     iden <- lexeme parseIdentifier
     args <- parseArgs
-    ClassDef iden args <$> parseScope
+    DataDef iden args <$> parseScope
     where
         parseArgs :: Parser [String]
         parseArgs = (do
@@ -370,7 +370,7 @@ parseStmt = do
         <|> parseLetAssign
         <|> parseWhile
         <|> parseFuncDef
-        <|> parseClassDef
+        <|> parseDataDef
         <|> parseIf
         <|> parsePrint
         <|> parseReturnStmt

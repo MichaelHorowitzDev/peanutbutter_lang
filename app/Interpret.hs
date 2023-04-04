@@ -196,7 +196,7 @@ instanceCall (params, stmts, env) args pos = do
     let vars = zip params args
     env <- replaceEnv env (addConstStoreScope vars)
     env <- replaceEnv env (execStmts stmts)
-    return $ ClassInstance env
+    return $ DataInstance env
     where
         testArity :: [String] -> [Value] -> Interpreter ()
         testArity xs ys = (lift . except) $ guardEither (params == args)
@@ -318,8 +318,8 @@ printVal (NativeFunc {}) = putStrLn "<native_fn>"
 printVal (Array v) = print v
 printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
-printVal (Class {}) = putStrLn "<class>"
-printVal (ClassInstance {}) = putStrLn "<object>"
+printVal (Data {}) = putStrLn "<data>"
+printVal (DataInstance {}) = putStrLn "<data_instance>"
 printVal v = putStrLn $ "cannot print value: " ++ show v
 
 eval :: Exp -> Interpreter Value
@@ -379,7 +379,7 @@ eval (CallFunc exp args pos) = do
             funcCall (Function params stmts funcEnv) args pos
         (NativeFunc native) -> do
             nativeFuncCall pos args native
-        (Class params stmts env) -> do
+        (Data params stmts env) -> do
             args <- evalArgs args
             instanceCall (params, stmts, env) args pos
         _ -> throwErr (InterpretError (callNonFuncErr value) pos)
@@ -414,7 +414,7 @@ eval (Subscript exp sub pos) = do
 eval (Getter exp var pos) = do
     value <- eval exp
     case value of
-        ClassInstance env -> replaceEnv env $ getterLookup var pos
+        DataInstance env -> replaceEnv env $ getterLookup var pos
         _ -> throwErr (InterpretError (callMemberNonObject value) pos)
 
 initVars :: [Stmt] -> [Stmt]
@@ -468,7 +468,7 @@ exec (FuncDef s args stmt pos) = do
     let varInits = initVars stmt
     let function = Func args varInits env
     addLet (s, function)
-exec (ClassDef s args stmts pos) = do
+exec (DataDef s args stmts pos) = do
     scoped <- inScope s
     lift $ except $ guardEither (not scoped) (errWithOffset pos (InvalidRedeclarationOfVar s))
     case find (not . validClassStmt) stmts of
@@ -476,8 +476,8 @@ exec (ClassDef s args stmts pos) = do
             throwErr $ InterpretError (InvalidClassStmt $ getStmtName stmt) (getStmtPosition stmt)
         Nothing -> return ()
     env <- getEnv
-    let classDec = Class args stmts env
-    addLet (s, classDec)
+    let dataDec = Data args stmts env
+    addLet (s, dataDec)
 exec (CallExp exp pos) = case exp of
     (CallFunc name args pos) -> eval exp >> getEnv
     _ -> eval exp >> getEnv
@@ -500,7 +500,7 @@ validClassStmt stmt = case stmt of
     LetAssign {} -> True
     VarAssign {} -> True
     FuncDef {} -> True
-    ClassDef {} -> True
+    DataDef {} -> True
     _ -> False
 
 performTransformations :: [Stmt] -> [Stmt]

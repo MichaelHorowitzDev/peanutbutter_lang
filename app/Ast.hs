@@ -62,7 +62,7 @@ data Stmt = VarAssign String Exp Position
     | While Exp [Stmt] Position
     | If [(Exp, [Stmt])] [Stmt] Position
     | FuncDef String [String] [Stmt] Position
-    | ClassDef String [String] [Stmt] Position
+    | DataDef String [String] [Stmt] Position
     | ReturnStmt Exp Position
     | CallExp Exp Position
     | Print Exp Position
@@ -76,7 +76,7 @@ getStmtName stmt = case stmt of
     While {} -> "while"
     If {} -> "if"
     FuncDef {} -> "function definition"
-    ClassDef {} -> "class definition"
+    DataDef {} -> "class definition"
     ReturnStmt {} -> "return"
     CallExp {} -> "expression call"
     Print {} -> "print"
@@ -89,7 +89,7 @@ getStmtPosition (LetAssign _ _ pos) = pos
 getStmtPosition (While _ _ pos) = pos
 getStmtPosition (If _ _ pos) = pos
 getStmtPosition (FuncDef _ _ _ pos) = pos
-getStmtPosition (ClassDef _ _ _ pos) = pos
+getStmtPosition (DataDef _ _ _ pos) = pos
 getStmtPosition (ReturnStmt _ pos) = pos
 getStmtPosition (CallExp _ pos) = pos
 getStmtPosition (Print _ pos) = pos
@@ -100,8 +100,8 @@ data Value = Int Int
     | Bool Bool
     | Func [String] [Stmt] Env
     | NativeFunc NativeFunction
-    | Class [String] [Stmt] Env
-    | ClassInstance Env
+    | Data [String] [Stmt] Env
+    | DataInstance Env
     | Array (V.Vector Value)
     | Void
     | Null
@@ -134,8 +134,8 @@ instance Show Value where
         (Bool b) -> show b
         (Func {}) -> "<func>"
         (NativeFunc {}) -> "<native_fn>"
-        (Class {}) -> "<class>"
-        (ClassInstance {}) -> "<object>"
+        (Data {}) -> "<data>"
+        (DataInstance {}) -> "<data_instance>"
         (Array vector) -> "Array " ++ show vector
         Void -> "Void"
         Null -> "Null"
@@ -193,8 +193,8 @@ valueTypeLookup v = case v of
     Bool {} -> "Bool"
     Func {} -> "Function"
     NativeFunc {} -> "Function"
-    Class {} -> "Class"
-    ClassInstance {} -> "Object"
+    Data {} -> "Data"
+    DataInstance {} -> "Data Instance"
     Void -> "Void"
     Array {} -> "Array"
     Null -> "Null"
