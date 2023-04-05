@@ -408,10 +408,16 @@ eval (ArrayDef exps pos) = do
             return (val:vals)
 eval (Subscript exp sub pos) = do
     value <- eval exp
-    (vector, n) <- lift $ except $ maybeToEither (errWithOffset pos $ subscriptNonArrayErr value) (getArray value)
-    index <- eval sub >>= \index -> lift $ except $ maybeToEither (errWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
-    lift $ except $ guardEither (n > index && index >= 0) (errWithOffset pos $ IndexOutOfBounds index n)
-    return $ vector V.! index
+    case value of
+        (Array vector n) -> do
+            index <- getIndex n
+            return $ vector V.! index
+    where
+        getIndex :: Int -> Interpreter Int
+        getIndex n = do
+            index <- eval sub >>= \index -> lift $ except $ maybeToEither (errWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
+            lift $ except $ guardEither (n > index && index >= 0) (errWithOffset pos $ IndexOutOfBounds index n)
+            return index
 eval (Getter exp var pos) = do
     value <- eval exp
     case value of
