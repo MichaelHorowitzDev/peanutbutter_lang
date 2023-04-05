@@ -3,6 +3,7 @@ module Ast (
   Value (..),
   getInt,
   getFloat,
+  getFloating,
   getString,
   getBool,
   getArray,
@@ -28,6 +29,7 @@ import InterpretError
 import Control.Monad.Trans.Except
 import qualified Data.Vector as V
 import Control.Monad.Reader
+import Control.Applicative
 
 data Exception = ErrMsg String
     | ReturnExcept Env Exp Position
@@ -106,6 +108,9 @@ data Value = Int Int
     | Array (V.Vector Value) Int
     | Void
     | Null
+
+getFloating :: Value -> Maybe Float
+getFloating v = getFloat v <|> fromIntegral <$> getInt v
 
 getInt :: Value -> Maybe Int
 getInt (Int n) = Just n

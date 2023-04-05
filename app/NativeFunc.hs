@@ -35,7 +35,7 @@ secondArg = ReaderT $ \args -> return $ args !! 1
 sqrtNative :: NativeFunction
 sqrtNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
-    f <- getValueType getFloat v "Float" pos
+    f <- getValueType getFloating v "Float" pos
     return (Float $ sqrt f)
 
 getValueType :: (MonadTrans m, Monad t) => (Value -> Maybe a) -> Value -> String -> Position -> m (ExceptT Exception t) a
