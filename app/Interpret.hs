@@ -178,7 +178,7 @@ nativeFuncCall :: Position -> [Exp] -> NativeFunction -> Interpreter Value
 nativeFuncCall pos exps native = do
     testArity
     args <- evalArgs exps
-    lift $ runNativeFunc native args
+    lift $ runReaderT (runNativeFunc native) args
     where
         testArity = (lift . except) $ guardEither (length exps == funcArity native)
             (errWithOffset pos (ArityErr (funcArity native) (length exps)))

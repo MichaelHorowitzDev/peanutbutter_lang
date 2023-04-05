@@ -27,6 +27,7 @@ import Position
 import InterpretError
 import Control.Monad.Trans.Except
 import qualified Data.Vector as V
+import Control.Monad.Reader
 
 data Exception = ErrMsg String
     | ReturnExcept Env Exp Position
@@ -38,7 +39,7 @@ type Var = String
 data Val = Val { value :: Value, mutable :: Bool } deriving Show
 data NativeFunction = NativeFunction {
     funcArity :: Int,
-    runNativeFunc :: [(Value, Position)] -> ExceptT Exception IO Value
+    runNativeFunc :: ReaderT [(Value, Position)] (ExceptT Exception IO) Value
     }
 
 data Env = Env {
