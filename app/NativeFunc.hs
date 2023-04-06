@@ -42,6 +42,10 @@ getValueType :: (MonadTrans m, Monad t) => (Value -> Maybe a) -> Value -> String
 getValueType f v expected pos =
     lift $ except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) expected) (f v)
 
+showNative :: NativeFunction
+showNative = NativeFunction 1 $ do
+    (v, pos) <- firstArg
+    return (String $ show v)
 
 clockNative :: NativeFunction
 clockNative = NativeFunction 0 $ do
@@ -101,5 +105,6 @@ nativeFuncs = [
     ("length", vectorLengthNative),
     ("input", inputNative),
     ("putStr", putStrNative),
-    ("append", vectorAppendNative)
+    ("append", vectorAppendNative),
+    ("show", showNative)
     ]
