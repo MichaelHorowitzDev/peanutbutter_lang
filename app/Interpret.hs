@@ -16,11 +16,12 @@ import NativeFunc
 import qualified Data.Vector as V
 import Data.List (find)
 import Data.List.Extra (nubOrd)
+import qualified Data.Map.Strict as Map
 
 type Prog = [Stmt]
 
 type Interpreter a = ReaderT Env (ExceptT Exception IO) a
-type Store = [(Var, Val)]
+type Store = Map.Map Var Val
 
 maybeToMaybeT :: Applicative m => Maybe b -> MaybeT m b
 maybeToMaybeT = MaybeT . pure
@@ -55,18 +56,18 @@ envLookup var = do
         envLook :: Env -> Var -> MaybeT IO Val
         envLook (Env store prev) var = do
             s <- lift (readIORef store)
-            case lookup var s of
+            case Map.lookup var s of
                 (Just val) -> return val
                 Nothing -> maybeToMaybeT prev >>= \env -> envLook env var
 
 newEnv :: IO Env
 newEnv = do
-    x <- newIORef []
+    x <- newIORef Map.empty
     return $ Env x Nothing
 
 envWithNative :: IO Env
 envWithNative = do
-    x <- newIORef (varsFromFuncs nativeFuncs)
+    x <- newIORef (Map.fromList $ varsFromFuncs nativeFuncs)
     return $ Env x Nothing
 
 varLookup :: Var -> Position -> Interpreter Value
@@ -82,27 +83,26 @@ varLookup var offset = do
 
 getterLookup :: Var -> Position -> Interpreter Value
 getterLookup var offset = do
-    result <- lookup var <$> readStore
+    result <- Map.lookup var <$> readStore
     lift $ except $ maybeToEither (errWithOffset offset (UnboundErr var)) (value <$> result)
 
 inScope :: Var -> Interpreter Bool
 inScope v = do
     store <- readStore
-    case lookup v store of
+    case Map.lookup v store of
         (Just val) -> return $ not $ isNull (value val)
         Nothing -> return False
 
-addVar :: (Var, Value) -> Interpreter Env
-addVar (var, val) = do
-    let value = mutableVar val
-    modifyStore ((var, value):)
+addVal :: (Var, Val) -> Interpreter Env
+addVal (var, val) = do
+    modifyStore (Map.insert var val)
     getEnv
 
+addVar :: (Var, Value) -> Interpreter Env
+addVar (var, value) = addVal (var, mutableVar value)
+
 addLet :: (Var, Value) -> Interpreter Env
-addLet (var, val) = do
-    let value = immutableVar val
-    modifyStore ((var, value):)
-    getEnv
+addLet (var, value) = addVal (var, immutableVar value)
 
 throwErrIf :: Bool -> InterpretError -> Interpreter ()
 throwErrIf True = throwErr
@@ -121,19 +121,17 @@ varReassign pair@(var, val) pos = do
     throwErrIf (not scoped && mutable val) (InterpretError (ReassignMutVar var) pos)
     reassign pair
     where
-        replace :: Eq a => a -> [(a, b)] -> b -> [(a, b)]
-        replace key xs value = map (\x -> if key == fst x then (key, value) else x) xs
         reassign :: (Var, Value) -> Interpreter Env
         reassign (var, val) = do
             store <- readStore
-            let newStore = replace var store (mutableVar val)
+            let newStore = Map.insert var (mutableVar val) store
             writeStore newStore
             getEnv
 
 addScope :: Interpreter Env
 addScope = do
     env <- getEnv
-    x <- liftIO $ newIORef []
+    x <- liftIO $ newIORef Map.empty
     return $ Env x (Just env)
 
 immutableVar :: Value -> Val
@@ -207,7 +205,7 @@ instanceCall (params, stmts, env) args pos = do
         addConstStoreScope :: [(Var, Value)] -> Interpreter Env
         addConstStoreScope store = do
             env <- getEnv
-            let consts = map (\(x, y) -> (x, immutableVar y)) store
+            let consts = Map.fromList $ map (\(x, y) -> (x, immutableVar y)) store
             vars <- liftIO (newIORef consts)
             return $ Env vars (Just env)
 
@@ -231,7 +229,7 @@ funcCall function args pos = do
         addConstStoreScope :: [(Var, Value)] -> Interpreter Env
         addConstStoreScope store = do
             env <- getEnv
-            let consts = map (\(x, y) -> (x, immutableVar y)) store
+            let consts = Map.fromList $ map (\(x, y) -> (x, immutableVar y)) store
             vars <- liftIO (newIORef consts)
             return $ Env vars (Just env)
 

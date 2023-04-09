@@ -30,6 +30,7 @@ import Control.Monad.Trans.Except
 import qualified Data.Vector as V
 import Control.Monad.Reader
 import Control.Applicative
+import qualified Data.Map.Strict as Map
 
 data Exception = ErrMsg String
     | ReturnExcept Env Exp Position
@@ -45,7 +46,7 @@ data NativeFunction = NativeFunction {
     }
 
 data Env = Env {
-    varEnv :: IORef [(Var, Val)],
+    varEnv :: IORef (Map.Map Var Val),
     prevEnv :: Maybe Env
 }
     deriving Show
