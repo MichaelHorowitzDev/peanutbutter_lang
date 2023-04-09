@@ -451,6 +451,10 @@ exec (VarReassign s exp pos) = do
     value <- eval exp
     varReassign (s, value) pos
 exec (While exp stmts pos) = do
+    case find (not . validWhileStmt) stmts of
+        Just stmt -> do
+            throwErr $ InterpretError (InvalidWhileStmt $ getStmtName stmt) (getStmtPosition stmt)
+        Nothing -> return ()
     value <- eval exp
     case value of
         (Bool True) -> do
@@ -458,6 +462,14 @@ exec (While exp stmts pos) = do
             local (const env') (execStmts [While exp stmts pos])
         (Bool False) -> getEnv
         v -> throwErr $ InterpretError (WrongTypeErr (valueTypeLookup v) "Bool") (getExpPosition exp)
+    where
+        validWhileStmt :: Stmt -> Bool
+        validWhileStmt stmt = case stmt of
+            LetAssign {} -> False
+            VarAssign {} -> False
+            FuncDef {} -> False
+            DataDef {} -> False
+            _ -> True
 exec (If [] stmt pos) = execStmts stmt
 exec (If ((exp, stmt):xs) stmt' pos) = do
     value <- eval exp

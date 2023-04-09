@@ -17,6 +17,7 @@ data InterpretErrorType = InvalidRedeclarationOfVar String
     | IndexOutOfBounds Int Int
     | ArityErr Int Int
     | InvalidClassStmt String
+    | InvalidWhileStmt String
     | CallMemberNonObject String
     | DuplicateFuncArgs
     | ReturnNotInFunction
@@ -42,6 +43,7 @@ instance ShowErrorComponent InterpretError where
         (ArityErr x y) -> "incorrect number of arguments passed to function" ++
             "\n" ++ show x ++ " parameters expected but " ++ show y ++ " arguments passed in"
         (InvalidClassStmt s) -> "invalid `" ++ s ++ "` statement found in class declaration \n"
+        (InvalidWhileStmt s) -> "invalid `" ++ s ++ "` statement found in while loop \n"
         (CallMemberNonObject v1) -> "attempt to call member on non object type `" ++ v1 ++ "`"
         DuplicateFuncArgs -> "duplicate function arguments found"
         ReturnNotInFunction -> "return statement not nested in function"
