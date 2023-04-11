@@ -58,6 +58,38 @@ vectorLengthNative = NativeFunction 1 $ do
     (v, n) <- getValueType getArray v "List" pos
     return $ Int n
 
+vectorMapNative :: NativeFunction
+vectorMapNative = NativeFunction 2 $ do
+    (v, pos) <- firstArg
+    (vector, size) <- getValueType getArray v "List" pos
+    (v, pos) <- secondArg
+    function <- getValueType getFunc v "Function" pos
+    newVector <- V.mapM (\x -> lift $ runReaderT (runFunction function) ([x], pos)) vector
+    return $ Array newVector size
+
+vectorFilterNative :: NativeFunction
+vectorFilterNative = NativeFunction 2 $ do
+    (v, pos) <- firstArg
+    (vector, size) <- getValueType getArray v "List" pos
+    (v, pos) <- secondArg
+    function <- getValueType getFunc v "Function" pos
+    newVector <- V.filterM (\x -> lift $ getBool' function x pos) vector
+    return $ Array newVector size
+    where
+        getBool' :: Function -> Value -> Position -> (ExceptT Exception IO) Bool
+        getBool' f x pos = do
+            v <- runReaderT (runFunction f) ([x], pos)
+            except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) "Bool") (getBool v)
+
+vectorWithRangeNative :: NativeFunction
+vectorWithRangeNative = NativeFunction 2 $ do
+    (v, pos) <- firstArg
+    lower <- getValueType getInt v "Int" pos
+    (v, pos) <- secondArg
+    upper <- getValueType getInt v "Int" pos
+    let size = max 0 (upper - lower + 1)
+    return $ Array (V.map Int $ V.fromList [lower..upper]) size
+
 vectorAppendNative :: NativeFunction
 vectorAppendNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
@@ -106,5 +138,8 @@ nativeFuncs = [
     ("input", inputNative),
     ("putStr", putStrNative),
     ("append", vectorAppendNative),
-    ("show", showNative)
+    ("show", showNative),
+    ("map", vectorMapNative),
+    ("filter", vectorFilterNative),
+    ("vectorWithRange", vectorWithRangeNative)
     ]
