@@ -209,29 +209,35 @@ instanceCall (params, stmts, env) args pos = do
             vars <- liftIO (newIORef consts)
             return $ Env vars (Just env)
 
-funcCall :: Function -> [Value] -> Position -> Interpreter Value
-funcCall function args pos = do
-    let (Function params stmts funcEnv) = function
-    testArity params args
+createRunFunction :: [String] -> [Stmt] -> Env -> Function
+createRunFunction params stmts funcEnv = Function params stmts funcEnv $ do
+    (args, pos) <- ask
+    lift $ except $ testArity params args pos
     let vars = zip params args
-    env <- replaceEnv funcEnv (addConstStoreScope vars)
-    lift $ ExceptT $ runExceptT (runReaderT (execStmts stmts) env) >>= \result -> case result of
-        Right env -> return $ Right Void
-        Left (ReturnExcept env expStmt pos) -> runExceptT $ runReaderT (eval expStmt) env
-        Left a -> return $ Left a
+    env <- liftIO (addConstStoreScope funcEnv vars)
+    lift $ runReaderT makeCall env
     where
-        testArity :: [String] -> [Value] -> Interpreter ()
-        testArity xs ys = (lift . except) $ guardEither (params == args)
+        testArity :: [String] -> [Value] -> Position -> Either Exception ()
+        testArity xs ys pos = guardEither (params == args)
             (errWithOffset pos (ArityErr params args))
             where
                 params = length xs
                 args = length ys
-        addConstStoreScope :: [(Var, Value)] -> Interpreter Env
-        addConstStoreScope store = do
-            env <- getEnv
+        addConstStoreScope :: Env -> [(Var, Value)] -> IO Env
+        addConstStoreScope env store = do
             let consts = Map.fromList $ map (\(x, y) -> (x, immutableVar y)) store
-            vars <- liftIO (newIORef consts)
+            vars <- newIORef consts
             return $ Env vars (Just env)
+        makeCall :: Interpreter Value
+        makeCall = do
+            env <- ask
+            lift $ ExceptT $ runExceptT (runReaderT (execStmts stmts) env) >>= \result -> case result of
+                Right env -> return $ Right Void
+                Left (ReturnExcept env expStmt pos) -> runExceptT $ runReaderT (eval expStmt) env
+                Left a -> return $ Left a
+
+funcCall :: Function -> [Value] -> Position -> Interpreter Value
+funcCall function args pos = lift $ runReaderT (runFunction function) (args, pos)
 
 add :: Value -> Value -> Position -> Either Exception Value
 add x y pos = case (x, y) of
@@ -372,9 +378,9 @@ eval (Bang x pos) = do
 eval (CallFunc exp args pos) = do
     value <- eval exp
     case value of
-        (Func params stmts funcEnv) -> do
+        (Func function) -> do
             args <- evalArgs args
-            funcCall (Function params stmts funcEnv) args pos
+            funcCall function args pos
         (NativeFunc native) -> do
             nativeFuncCall pos args native
         (Data params stmts env) -> do
@@ -390,8 +396,8 @@ eval (CallFunc exp args pos) = do
             return (val:vals)
 eval (Lambda params exp pos) = do
     env <- getEnv
-    lift $ except $ guardEither (nubOrd params == params) (errWithOffset pos DuplicateFuncArgs)
-    let function = Func params [ReturnStmt exp (Position 0 0)] env
+    lift $ except $ guardEither (nubOrd params == params) (errWithOffset pos DuplicateFuncParams)
+    let function = Func $ createRunFunction params [ReturnStmt exp (Position 0 0)] env
     return function
 eval (ArrayDef exps pos) = do
     vals <- evalExps exps
@@ -477,13 +483,13 @@ exec (If ((exp, stmt):xs) stmt' pos) = do
         (Bool True) -> execStmts stmt
         (Bool False) -> exec (If xs stmt' pos)
         v -> throwErr $ InterpretError (WrongTypeErr (valueTypeLookup v) "Bool") (getExpPosition exp)
-exec (FuncDef s args stmt pos) = do
+exec (FuncDef s params stmt pos) = do
     env <- getEnv
     scoped <- inScope s
     lift $ except $ guardEither (not scoped) (errWithOffset pos (InvalidRedeclarationOfVar s))
-    lift $ except $ guardEither (nubOrd args == args) (errWithOffset pos DuplicateFuncArgs)
+    lift $ except $ guardEither (nubOrd params == params) (errWithOffset pos DuplicateFuncParams)
     let varInits = initVars stmt
-    let function = Func args varInits env
+    let function = Func $ createRunFunction params stmt env
     addLet (s, function)
 exec (DataDef s args stmts pos) = do
     scoped <- inScope s

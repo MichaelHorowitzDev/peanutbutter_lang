@@ -7,6 +7,7 @@ module Ast (
   getString,
   getBool,
   getArray,
+  getFunc,
   isNull,
   valueTypeLookup,
   Exp (..),
@@ -45,6 +46,13 @@ data NativeFunction = NativeFunction {
     runNativeFunc :: ReaderT [(Value, Position)] (ExceptT Exception IO) Value
     }
 
+data Function = Function {
+    funcParams :: [String],
+    funcStmts :: [Stmt],
+    funcEnv :: Env,
+    runFunction :: ReaderT ([Value], Position) (ExceptT Exception IO) Value
+}
+
 data Env = Env {
     varEnv :: IORef (Map.Map Var Val),
     prevEnv :: Maybe Env
@@ -53,12 +61,6 @@ data Env = Env {
 
 instance (Show a) => Show (IORef a) where
     show a = show (unsafePerformIO (readIORef a))
-
-data Function = Function {
-  funcParams :: [String],
-  funcStmts :: [Stmt],
-  funcEnv :: Env
-  }
 
 data Stmt = VarAssign String Exp Position
     | VarReassign String Exp Position
@@ -102,11 +104,12 @@ data Value = Int Int
     | Float Float
     | String String
     | Bool Bool
-    | Func [String] [Stmt] Env
+    | Func Function
     | NativeFunc NativeFunction
     | Data [String] [Stmt] Env
     | DataInstance Env
     | Array (V.Vector Value) Int
+    | List [Value]
     | Void
     | Null
 
@@ -132,6 +135,10 @@ getBool _ = Nothing
 getArray :: Value -> Maybe (V.Vector Value, Int)
 getArray (Array v n) = Just (v, n)
 getArray _ = Nothing
+
+getFunc :: Value -> Maybe Function
+getFunc (Func function) = Just function
+getFunc _ = Nothing
 
 instance Show Value where
     show a = case a of

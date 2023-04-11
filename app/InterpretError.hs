@@ -19,7 +19,7 @@ data InterpretErrorType = InvalidRedeclarationOfVar String
     | InvalidClassStmt String
     | InvalidWhileStmt String
     | CallMemberNonObject String
-    | DuplicateFuncArgs
+    | DuplicateFuncParams
     | ReturnNotInFunction
     deriving (Eq, Ord, Show)
 
@@ -45,6 +45,6 @@ instance ShowErrorComponent InterpretError where
         (InvalidClassStmt s) -> "invalid `" ++ s ++ "` statement found in class declaration \n"
         (InvalidWhileStmt s) -> "invalid `" ++ s ++ "` statement found in while loop \n"
         (CallMemberNonObject v1) -> "attempt to call member on non object type `" ++ v1 ++ "`"
-        DuplicateFuncArgs -> "duplicate function arguments found"
+        DuplicateFuncParams -> "duplicate function parameters found"
         ReturnNotInFunction -> "return statement not nested in function"
     errorComponentLen a = posLength $ offset a
