@@ -209,6 +209,20 @@ instanceCall (params, stmts, env) args pos = do
             vars <- liftIO (newIORef consts)
             return $ Env vars (Just env)
 
+copyVarEnv :: Env -> IO Env
+copyVarEnv env = do
+    store <- readIORef $ varEnv env
+    store' <- newIORef store
+    return $ Env store' (prevEnv env)
+
+bindSelf :: Env -> Function -> Value -> IO Function
+bindSelf env (Function params stmts _ _) value = do
+    env <- copyVarEnv env
+    let val = immutableVar value
+    modifyIORef (varEnv env) (Map.insert "self" val)
+    let function = createRunFunction params stmts env
+    return function
+
 createRunFunction :: [String] -> [Stmt] -> Env -> Function
 createRunFunction params stmts funcEnv = Function params stmts funcEnv $ do
     (args, pos) <- ask
@@ -425,7 +439,13 @@ eval (Subscript exp sub pos) = do
 eval (Getter exp var pos) = do
     value <- eval exp
     case value of
-        DataInstance env -> replaceEnv env $ getterLookup var pos
+        DataInstance env -> do
+            value <- replaceEnv env $ getterLookup var pos
+            case value of
+                (Func function) -> do
+                    f <- liftIO $ bindSelf env function (DataInstance env)
+                    return $ Func f
+                _ -> return value
         _ -> throwErr (InterpretError (callMemberNonObject value) pos)
 
 initVars :: [Stmt] -> [Stmt]
