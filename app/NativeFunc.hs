@@ -64,7 +64,7 @@ vectorMapNative = NativeFunction 2 $ do
     (vector, size) <- getValueType getArray v "List" pos
     (v, pos) <- secondArg
     function <- getValueType getFunc v "Function" pos
-    newVector <- V.mapM (\x -> lift $ runReaderT (runFunction function) ([x], pos)) vector
+    newVector <- V.mapM (\x -> lift $ runFunction function ([x], pos)) vector
     return $ Array newVector size
 
 vectorFilterNative :: NativeFunction
@@ -78,7 +78,7 @@ vectorFilterNative = NativeFunction 2 $ do
     where
         getBool' :: Function -> Value -> Position -> (ExceptT Exception IO) Bool
         getBool' f x pos = do
-            v <- runReaderT (runFunction f) ([x], pos)
+            v <- runFunction f ([x], pos)
             except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) "Bool") (getBool v)
 
 vectorWithRangeNative :: NativeFunction

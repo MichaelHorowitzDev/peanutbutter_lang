@@ -224,12 +224,11 @@ bindSelf env (Function params stmts _ _) value = do
     return function
 
 createRunFunction :: [String] -> [Stmt] -> Env -> Function
-createRunFunction params stmts funcEnv = Function params stmts funcEnv $ do
-    (args, pos) <- ask
-    lift $ except $ testArity params args pos
+createRunFunction params stmts funcEnv = Function params stmts funcEnv $ \(args, pos) -> do
+    except $ testArity params args pos
     let vars = zip params args
     env <- liftIO (addConstStoreScope funcEnv vars)
-    lift $ runReaderT makeCall env
+    runReaderT makeCall env
     where
         testArity :: [String] -> [Value] -> Position -> Either Exception ()
         testArity xs ys pos = guardEither (params == args)
@@ -251,7 +250,7 @@ createRunFunction params stmts funcEnv = Function params stmts funcEnv $ do
                 Left a -> return $ Left a
 
 funcCall :: Function -> [Value] -> Position -> Interpreter Value
-funcCall function args pos = lift $ runReaderT (runFunction function) (args, pos)
+funcCall function args pos = lift $ (runFunction function) (args, pos)
 
 add :: Value -> Value -> Position -> Either Exception Value
 add x y pos = case (x, y) of
@@ -446,7 +445,23 @@ eval (Getter exp var pos) = do
                     f <- liftIO $ bindSelf env function (DataInstance env)
                     return $ Func f
                 _ -> return value
-        _ -> throwErr (InterpretError (callMemberNonObject value) pos)
+        _ -> do
+            newValue <- varLookup var pos
+            case newValue of
+                (Func function) -> return $ Func (prependArg function value)
+                (NativeFunc f) -> do
+                    return $ NativeFunc (prependNativeArg f (value, getExpPosition exp))
+                _ -> throwErr (InterpretError (callNonFuncErr value) pos)
+
+prependArg :: Function -> Value -> Function
+prependArg (Function params stmts env f) arg =
+    Function params stmts env $ \(args, pos) -> f (arg:args, pos)
+
+prependNativeArg :: NativeFunction -> (Value, Position) -> NativeFunction
+prependNativeArg (NativeFunction arity f) x@(arg, pos) = NativeFunction (arity - 1) new
+    where
+        ran = runReaderT f :: [(Value, Position)] -> ExceptT Exception IO Value
+        new = ReaderT $ \xs -> ran (x:xs)
 
 initVars :: [Stmt] -> [Stmt]
 initVars stmts = getDecs stmts ++ stmts

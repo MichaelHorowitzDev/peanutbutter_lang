@@ -50,7 +50,7 @@ data Function = Function {
     funcParams :: [String],
     funcStmts :: [Stmt],
     funcEnv :: Env,
-    runFunction :: ReaderT ([Value], Position) (ExceptT Exception IO) Value
+    runFunction :: ([Value], Position) -> ExceptT Exception IO Value
 }
 
 data Env = Env {
