@@ -314,6 +314,16 @@ notEqual x y pos = case (x, y) of
     (Bool x, Bool y) -> return $ Bool $ x /= y
     _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
 
+and' :: Value -> Value -> Position -> Either Exception Value
+and' x y pos = case (x, y) of
+    (Bool x, Bool y) -> return $ Bool $ x && y
+    _ -> Left $ errWithOffset pos (binOpTypeErr "and" x y)
+
+or' :: Value -> Value -> Position -> Either Exception Value
+or' x y pos = case (x, y) of
+    (Bool x, Bool y) -> return $ Bool $ x || y
+    _ -> Left $ errWithOffset pos (binOpTypeErr "or" x y)
+
 negateVal :: Value -> Position -> Either Exception Value
 negateVal x pos = case x of
     (Int x) -> return $ Int (negate x)
@@ -382,6 +392,14 @@ eval (NotEqual x y pos) = do
     v1 <- eval x
     v2 <- eval y
     lift $ except $ notEqual v1 v2 pos
+eval (And x y pos) = do
+    v1 <- eval x
+    v2 <- eval y
+    lift $ except $ and' v1 v2 pos
+eval (Or x y pos) = do
+    v1 <- eval x
+    v2 <- eval y
+    lift $ except $ or' v1 v2 pos
 eval (Negate x pos) = do
     v1 <- eval x
     lift $ except $ negateVal v1 pos

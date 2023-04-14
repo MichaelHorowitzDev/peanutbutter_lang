@@ -225,6 +225,21 @@ parseEquality = do
         len <- getOffset <&> subtract offset
         return (op c e1 (Position offset len))) <|> return c
 
+parseBoolOp :: Parser Exp
+parseBoolOp = do
+    space
+    offset <- getOffset
+    e <- parseEquality
+    flattenedBool offset e
+    where
+        flattenedBool :: Int -> Exp -> Parser Exp
+        flattenedBool offset e = do
+            op <- try $ lexeme $ (string "&&" $> And) <|> (string "||" $> Or)
+            e1 <- parseEquality
+            len <- getOffset <&> subtract offset
+            flattenedBool offset (op e e1 (Position offset len))
+            <|> return e
+
 parseLambda :: Parser Exp
 parseLambda = (do
     offset <- getOffset
@@ -234,7 +249,7 @@ parseLambda = (do
     string "->"
     exp <- parseExp
     len <- getOffset <&> subtract offset
-    return $ Lambda params exp (Position offset len)) <|> parseEquality
+    return $ Lambda params exp (Position offset len)) <|> parseBoolOp
     where
         parseParams :: Parser [String]
         parseParams = do

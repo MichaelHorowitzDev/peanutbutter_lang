@@ -168,6 +168,8 @@ data Exp = Add Exp Exp Position
     | GreaterEqual Exp Exp Position
     | Less Exp Exp Position
     | LessEqual Exp Exp Position
+    | And Exp Exp Position
+    | Or Exp Exp Position
     | Negate Exp Position
     | Bang Exp Position
     | CallFunc Exp [Exp] Position
@@ -192,6 +194,8 @@ getExpPosition (Less _ _ pos) = pos
 getExpPosition (LessEqual _ _ pos) = pos
 getExpPosition (Negate _ pos) = pos
 getExpPosition (Bang _ pos) = pos
+getExpPosition (And _ _ pos) = pos
+getExpPosition (Or _ _ pos) = pos
 getExpPosition (CallFunc _ _ pos) = pos
 getExpPosition (Lambda _ _ pos) = pos
 getExpPosition (ArrayDef _ pos) = pos
