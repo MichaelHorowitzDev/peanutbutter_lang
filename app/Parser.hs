@@ -157,6 +157,7 @@ parseCallFunc = do
             offset <- getOffset
             op <- (funcCall <&> CallFunc exp) <|> (subscript <&> Subscript exp) <|> (getter <&> Getter exp)
             len <- getOffset <&> subtract offset
+            space
             flattenedCalls $ op (Position offset len)
             ) <|> return exp
 
@@ -363,19 +364,25 @@ parseReturnStmt = (keyword "return" >> space1 >> parseExp) <&> ReturnStmt
 parsePrint :: Parser (Position -> Stmt)
 parsePrint = (keyword "print" >> space1 >> parseExp) <&> Print
 
-parseStmt :: Parser Stmt
-parseStmt = do
-    offset <- getOffset
+semicolonStmt :: Parser (Position -> Stmt)
+semicolonStmt = do
     stmt <- parseVarAssign
         <|> parseLetAssign
-        <|> parseWhile
-        <|> parseFuncDef
-        <|> parseDataDef
-        <|> parseIf
         <|> parsePrint
         <|> parseReturnStmt
         <|> try parseVarReassign
         <|> parseCallExp
+    char ';'
+    return stmt
+
+parseStmt :: Parser Stmt
+parseStmt = do
+    offset <- getOffset
+    stmt <- parseWhile
+        <|> parseFuncDef
+        <|> parseDataDef
+        <|> parseIf
+        <|> semicolonStmt
     len <- getOffset <&> subtract offset
     return $ stmt (Position offset len)
 
