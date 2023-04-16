@@ -32,6 +32,9 @@ firstArg = ReaderT $ \args -> return $ head args
 secondArg :: NativeFunc (Value, Position)
 secondArg = ReaderT $ \args -> return $ args !! 1
 
+thirdArg :: NativeFunc (Value, Position)
+thirdArg = ReaderT $ \args -> return $ args !! 2
+
 sqrtNative :: NativeFunction
 sqrtNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
@@ -66,6 +69,26 @@ vectorMapNative = NativeFunction 2 $ do
     function <- getValueType getFunc v "Function" pos
     newVector <- V.mapM (\x -> lift $ runFunction function ([x], pos)) vector
     return $ Array newVector size
+
+vFoldrM :: Monad m => (a -> b -> m b) -> b -> V.Vector a -> m b
+vFoldrM f acc vector
+    | null vector = return acc
+    | otherwise = do
+        rest <- vFoldrM f acc (V.tail vector)
+        f (V.head vector) rest
+
+vectorFoldrNative :: NativeFunction
+vectorFoldrNative = NativeFunction 3 $ do
+    (v, pos) <- firstArg
+    (vector, size) <- getValueType getArray v "List" pos
+    (v, pos) <- secondArg
+    function <- getValueType getFunc v "Function" pos
+    (v, pos) <- thirdArg
+    newValue <- vFoldrM (\x acc -> lift $ runFunc function (x, acc) pos) v vector
+    return newValue
+    where
+        runFunc :: Function -> (Value, Value) -> Position -> (ExceptT Exception IO) Value
+        runFunc f (x, acc) pos = runFunction f ([x, acc], pos)
 
 vectorFilterNative :: NativeFunction
 vectorFilterNative = NativeFunction 2 $ do
@@ -141,5 +164,6 @@ nativeFuncs = [
     ("show", showNative),
     ("map", vectorMapNative),
     ("filter", vectorFilterNative),
-    ("vectorWithRange", vectorWithRangeNative)
+    ("vectorWithRange", vectorWithRangeNative),
+    ("foldr", vectorFoldrNative)
     ]
