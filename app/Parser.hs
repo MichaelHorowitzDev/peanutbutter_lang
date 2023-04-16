@@ -90,7 +90,7 @@ parseArray = parseWithPos $ do
             return (first:rest)) <|> return []
 
 parsePrimary :: Parser Exp
-parsePrimary = lexeme $ (parseArray
+parsePrimary = lexeme (parseArray
         <|> parseStringLit
         <|> parseBoolLit
         <|> parseNum
@@ -104,7 +104,7 @@ parsePrimary = lexeme $ (parseArray
 funcCall :: Parser [Exp]
 funcCall = do
     lexeme (char '(')
-    args <- lexeme (parseArgs)
+    args <- lexeme parseArgs
     lexeme (char ')')
     return args
     where
@@ -243,7 +243,7 @@ parseCallExp :: Parser (Position -> Stmt)
 parseCallExp = CallExp <$> parseExp
 
 keyword :: String -> Parser String
-keyword s = lexeme $ try $ (string s <* notFollowedBy alphaNumChar)
+keyword s = lexeme $ try (string s <* notFollowedBy alphaNumChar)
 
 parseVarAssign :: Parser (Position -> Stmt)
 parseVarAssign = do
@@ -298,7 +298,7 @@ parseWhile = do
 parseScope :: Parser [Stmt]
 parseScope = do
     lexeme (char '{')
-    stmts <- many (lexeme (parseStmt))
+    stmts <- many (lexeme parseStmt)
     lexeme (char '}')
     return stmts
 
@@ -370,6 +370,6 @@ parseStmt = do
 parseProgram :: Parser [Stmt]
 parseProgram = do
     space
-    stmts <- many $ lexeme (parseStmt)
+    stmts <- many (lexeme parseStmt)
     eof
     return stmts
