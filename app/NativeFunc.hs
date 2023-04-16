@@ -58,17 +58,17 @@ clockNative = NativeFunction 0 $ do
 vectorLengthNative :: NativeFunction
 vectorLengthNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
-    (v, n) <- getValueType getArray v "List" pos
-    return $ Int n
+    v <- getValueType getArray v "List" pos
+    return $ Int $ V.length v
 
 vectorMapNative :: NativeFunction
 vectorMapNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
-    (vector, size) <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v "List" pos
     (v, pos) <- secondArg
     function <- getValueType getFunc v "Function" pos
     newVector <- V.mapM (\x -> lift $ runFunction function ([x], pos)) vector
-    return $ Array newVector size
+    return $ Array newVector
 
 vFoldrM :: Monad m => (a -> b -> m b) -> b -> V.Vector a -> m b
 vFoldrM f acc vector
@@ -80,7 +80,7 @@ vFoldrM f acc vector
 vectorFoldrNative :: NativeFunction
 vectorFoldrNative = NativeFunction 3 $ do
     (v, pos) <- firstArg
-    (vector, size) <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v "List" pos
     (v, pos) <- secondArg
     function <- getValueType getFunc v "Function" pos
     (v, pos) <- thirdArg
@@ -93,11 +93,11 @@ vectorFoldrNative = NativeFunction 3 $ do
 vectorFilterNative :: NativeFunction
 vectorFilterNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
-    (vector, size) <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v "List" pos
     (v, pos) <- secondArg
     function <- getValueType getFunc v "Function" pos
     newVector <- V.filterM (\x -> lift $ getBool' function x pos) vector
-    return $ Array newVector size
+    return $ Array newVector
     where
         getBool' :: Function -> Value -> Position -> (ExceptT Exception IO) Bool
         getBool' f x pos = do
@@ -111,26 +111,15 @@ vectorWithRangeNative = NativeFunction 2 $ do
     (v, pos) <- secondArg
     upper <- getValueType getInt v "Int" pos
     let size = max 0 (upper - lower + 1)
-    return $ Array (V.map Int $ V.fromList [lower..upper]) size
+    return $ Array (V.map Int $ V.fromList [lower..upper])
 
 vectorAppendNative :: NativeFunction
 vectorAppendNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
-    v@(vector, size) <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v "List" pos
     (value, pos) <- secondArg
-    let (newVector, newSize) = append v value
-    return $ Array newVector newSize
-    where
-        append :: (V.Vector Value, Int) -> Value -> (V.Vector Value, Int)
-        append (vector, size) value
-            | size < V.length vector =
-                let old = (V.toList $ V.take size vector)
-                    new = old ++ [value]
-                in (V.fromList new, size + 1)
-            | otherwise =
-                let old = V.toList vector
-                    new = old ++ [value]
-                in (V.fromList $ new ++ new, size + 1)
+    let newVector = V.snoc vector value
+    return $ Array newVector
 
 inputNative :: NativeFunction
 inputNative = NativeFunction 0 $ do

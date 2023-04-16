@@ -342,7 +342,7 @@ printVal (Int n) = print n
 printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
 printVal (NativeFunc {}) = putStrLn "<native_fn>"
-printVal (Array v n) = print (V.take n v)
+printVal (Array v) = print v
 printVal Void = putStrLn "Void"
 printVal Null = putStrLn "Null"
 printVal (Data {}) = putStrLn "<data>"
@@ -433,7 +433,7 @@ eval (Lambda params exp pos) = do
 eval (ArrayDef exps pos) = do
     vals <- evalExps exps
     let vector = V.fromList vals
-    return $ Array vector (V.length vector)
+    return $ Array vector
     where
         evalExps :: [Exp] -> Interpreter [Value]
         evalExps [] = return []
@@ -444,8 +444,8 @@ eval (ArrayDef exps pos) = do
 eval (Subscript exp sub pos) = do
     value <- eval exp
     case value of
-        (Array vector n) -> do
-            index <- getIndex n
+        (Array vector) -> do
+            index <- getIndex (V.length vector)
             return $ vector V.! index
     where
         getIndex :: Int -> Interpreter Int
