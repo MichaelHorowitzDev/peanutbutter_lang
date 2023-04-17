@@ -27,7 +27,7 @@ parseNum = binary <|> hex <|> oct <|> normalNum
     where
         int :: Parser Int
         int = do
-            int <- ('0':) <$> many digitChar
+            int <- some digitChar
             notFollowedBy letterChar
             return $ read int
         intPart :: Parser Int
