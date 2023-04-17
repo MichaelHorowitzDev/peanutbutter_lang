@@ -26,14 +26,27 @@ sc = L.space
 parseNum :: Parser Exp
 parseNum = do
     offset <- getOffset
-    int <- intPart
-    num <- (Lit . Float <$> floatPart int) <|> return (Lit $ Int int)
-    len <- getOffset <&> subtract offset
-    return $ num (Position offset len)
+    char '0'
+    (do
+        char 'b'
+        n <- binary
+        len <- getOffset <&> subtract offset
+        return $ (Lit $ Int n) (Position offset len))
+        <|> (do
+            char 'x'
+            n <- hex
+            len <- getOffset <&> subtract offset
+            return $ (Lit $ Int n) (Position offset len))
+        <|> (do
+            char 'o'
+            n <- oct
+            len <- getOffset <&> subtract offset
+            return $ (Lit $ Int n) (Position offset len))
+        <|> normalNum
     where
         int :: Parser Int
         int = do
-            int <- some digitChar
+            int <- ('0':) <$> many digitChar
             notFollowedBy letterChar
             return $ read int
         intPart :: Parser Int
@@ -47,6 +60,23 @@ parseNum = do
             float <- some digitChar
             notFollowedBy letterChar
             return $ read (show int ++ "." ++ float)
+        normalNum :: Parser Exp
+        normalNum = do
+            offset <- getOffset
+            int <- intPart
+            num <- (Lit . Float <$> floatPart int) <|> return (Lit $ Int int)
+            len <- getOffset <&> subtract offset
+            return $ num (Position offset len)
+        base :: Int -> String -> Parser Char -> Parser Int
+        base b name p = do
+            list <- many p
+            notFollowedBy numberChar <|> fail ("invalid digit in " ++ name ++ " number")
+            notFollowedBy letterChar <|> fail ("invalid character in " ++ name ++ " number")
+            return $ foldl (\acc x -> acc * b + read [x]) 0 list
+
+        binary = base 2 "binary" binDigitChar
+        hex = base 16 "hex" hexDigitChar
+        oct = base 8 "octal" octDigitChar
 
 parseString :: Parser String
 parseString = char '\"' >> manyTill L.charLiteral (char '\"')
