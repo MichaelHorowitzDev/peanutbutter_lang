@@ -17,6 +17,7 @@ import qualified Data.Vector as V
 import Data.List (find)
 import Data.List.Extra (nubOrd)
 import qualified Data.Map.Strict as Map
+import Data.Functor ((<&>))
 
 type Prog = [Stmt]
 
@@ -453,6 +454,33 @@ eval (Subscript exp sub pos) = do
             index <- eval sub >>= \index -> lift $ except $ maybeToEither (errWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
             lift $ except $ guardEither (n > index && index >= 0) (errWithOffset pos $ IndexOutOfBounds index n)
             return index
+eval (Slice exp start stop pos) = do
+    value <- eval exp
+    case value of
+        (Array vector) -> do
+            start <- getLower start <&> \x -> if x < 0 then V.length vector + x else x
+            end <- getHigher stop
+                <&> (\x -> if x < 0 then V.length vector + x else x)
+                <&> min (V.length vector)
+            let newVector = V.slice start (max 0 (end - start)) vector
+            return (Array newVector)
+        _ -> throwErr $ InterpretError (SubscriptNonArray (valueTypeLookup value)) pos
+    where
+        getLower :: Maybe Exp -> Interpreter Int
+        getLower Nothing = return 0
+        getLower (Just exp) = do
+            value <- eval exp
+            case getInt value of
+                Just x -> return x
+                Nothing -> throwErr $ InterpretError (WrongTypeErr (valueTypeLookup value) "Int") pos
+        getHigher :: Maybe Exp -> Interpreter Int
+        getHigher Nothing = return maxBound
+        getHigher (Just exp) = do
+            value <- eval exp
+            case getInt value of
+                Just x -> return x
+                Nothing -> throwErr $ InterpretError (WrongTypeErr (valueTypeLookup value) "Int") pos
+
 eval (Getter exp var pos) = do
     value <- eval exp
     case value of

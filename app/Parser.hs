@@ -116,12 +116,21 @@ funcCall = do
                 parseExp
             return (first:rest)) <|> return []
 
-subscript :: Parser Exp
-subscript = do
+subscriptSlice :: Exp -> Parser (Position -> Exp)
+subscriptSlice exp = do
     lexeme (char '[')
-    exp <- parseExp <|> fail "you forgot to pass in an integer for subscripting"
+    notFollowedBy (char ']') <|> fail "you forgot to pass in an integer for subscripting"
+    posExp <- (do
+        exp' <- parseExp
+        (latter <&> Slice exp (Just exp')) <|> return (Subscript exp exp')
+        ) <|> (latter <&> Slice exp Nothing)
     lexeme (char ']')
-    return exp
+    return posExp
+    where
+        latter :: Parser (Maybe Exp)
+        latter = do
+            lexeme (char ':')
+            optional parseExp
 
 getter :: Parser String
 getter = do
@@ -139,7 +148,7 @@ parseCallFunc = do
         flattenedCalls :: Exp -> Parser Exp
         flattenedCalls exp = (do
             offset <- getOffset
-            op <- (funcCall <&> CallFunc exp) <|> (subscript <&> Subscript exp) <|> (getter <&> Getter exp)
+            op <- (funcCall <&> CallFunc exp) <|> subscriptSlice exp <|> (getter <&> Getter exp)
             len <- getOffset <&> subtract offset
             sc
             flattenedCalls $ op (Position offset len)

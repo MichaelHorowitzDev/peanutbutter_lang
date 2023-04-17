@@ -176,6 +176,7 @@ data Exp = Add Exp Exp Position
     | Lambda [String] Exp Position
     | ArrayDef [Exp] Position
     | Subscript Exp Exp Position
+    | Slice Exp (Maybe Exp) (Maybe Exp) Position
     | Lit Value Position
     | Var String Position
     | Getter Exp String Position
