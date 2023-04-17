@@ -24,25 +24,7 @@ sc = L.space
     empty
 
 parseNum :: Parser Exp
-parseNum = do
-    offset <- getOffset
-    char '0'
-    (do
-        char 'b'
-        n <- binary
-        len <- getOffset <&> subtract offset
-        return $ (Lit $ Int n) (Position offset len))
-        <|> (do
-            char 'x'
-            n <- hex
-            len <- getOffset <&> subtract offset
-            return $ (Lit $ Int n) (Position offset len))
-        <|> (do
-            char 'o'
-            n <- oct
-            len <- getOffset <&> subtract offset
-            return $ (Lit $ Int n) (Position offset len))
-        <|> normalNum
+parseNum = binary <|> hex <|> oct <|> normalNum
     where
         int :: Parser Int
         int = do
@@ -67,16 +49,22 @@ parseNum = do
             num <- (Lit . Float <$> floatPart int) <|> return (Lit $ Int int)
             len <- getOffset <&> subtract offset
             return $ num (Position offset len)
-        base :: Int -> String -> Parser Char -> Parser Int
-        base b name p = do
-            list <- many p
-            notFollowedBy numberChar <|> fail ("invalid digit in " ++ name ++ " number")
-            notFollowedBy letterChar <|> fail ("invalid character in " ++ name ++ " number")
-            return $ foldl (\acc x -> acc * b + read [x]) 0 list
+        base :: Int -> Char -> String -> Parser Char -> Parser Exp
+        base b letter name p = do
+            offset <- getOffset
+            string ['0', letter]
+            list <- some p
+            notFollowedBy numberChar
+                <|> (lookAhead numberChar >>= \c -> fail ("invalid digit '" ++ [c] ++ "' in " ++ name ++ " number"))
+            notFollowedBy letterChar
+                <|> (lookAhead letterChar >>= \c -> fail ("invalid character '" ++ [c] ++ "' in " ++ name ++ " number"))
+            let n = foldl (\acc x -> acc * b + read [x]) 0 list
+            len <- getOffset <&> subtract offset
+            return $ (Lit $ Int n) (Position offset len)
 
-        binary = base 2 "binary" binDigitChar
-        hex = base 16 "hex" hexDigitChar
-        oct = base 8 "octal" octDigitChar
+        binary = base 2 'b' "binary" binDigitChar
+        hex = base 16 'x' "hex" hexDigitChar
+        oct = base 8 'o' "octal" octDigitChar
 
 parseString :: Parser String
 parseString = char '\"' >> manyTill L.charLiteral (char '\"')
