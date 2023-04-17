@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Interpret where
 
 import Ast
@@ -245,7 +246,7 @@ createRunFunction params stmts funcEnv = Function params stmts funcEnv $ \(args,
         makeCall :: Interpreter Value
         makeCall = do
             env <- ask
-            lift $ ExceptT $ runExceptT (runReaderT (execStmts stmts) env) >>= \result -> case result of
+            lift $ ExceptT $ runExceptT (runReaderT (execStmts stmts) env) >>= \case
                 Right env -> return $ Right Void
                 Left (ReturnExcept env expStmt pos) -> runExceptT $ runReaderT (eval expStmt) env
                 Left a -> return $ Left a
