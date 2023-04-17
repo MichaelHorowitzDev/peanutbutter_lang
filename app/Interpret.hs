@@ -448,6 +448,7 @@ eval (Subscript exp sub pos) = do
         (Array vector) -> do
             index <- getIndex (V.length vector)
             return $ vector V.! index
+        _ -> throwErr $ InterpretError (SubscriptNonArray (valueTypeLookup value)) pos
     where
         getIndex :: Int -> Interpreter Int
         getIndex n = do
