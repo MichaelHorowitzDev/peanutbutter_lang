@@ -85,9 +85,36 @@ parseArray = parseWithPos $ do
     where
         parseElems :: Parser [Exp]
         parseElems = (do
+            offset <- getOffset
+            start <- lexeme int
+            (do
+                lexeme (string "..")
+                end <- lexeme int <|> fail "expected upper bound for range"
+                len <- getOffset <&> subtract offset
+                return $ map (\x -> (Lit $ Int x) (Position offset len)) [start..end])
+                <|> do
+                    len <- getOffset <&> subtract offset
+                    rest ((Lit $ Int start) (Position offset len))
+            ) <|> (do
             first <- try parseExp
             rest <- many $ lexeme (char ',') >> parseExp
             return (first:rest)) <|> return []
+            where
+                rest :: Exp -> Parser [Exp]
+                rest first = do
+                    rest <- many $ lexeme (char ',') >> parseExp
+                    return (first:rest)
+
+nat :: Parser Int
+nat = do
+    int <- some digitChar
+    notFollowedBy letterChar
+    return $ read int
+int :: Parser Int
+int = do
+    char '-'
+    negate <$> nat
+    <|> nat
 
 parsePrimary :: Parser Exp
 parsePrimary = lexeme (parseArray
