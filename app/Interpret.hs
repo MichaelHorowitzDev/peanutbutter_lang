@@ -252,7 +252,7 @@ createRunFunction params stmts funcEnv = Function params stmts funcEnv $ \(args,
                 Left a -> return $ Left a
 
 funcCall :: Function -> [Value] -> Position -> Interpreter Value
-funcCall function args pos = lift $ (runFunction function) (args, pos)
+funcCall function args pos = lift $ runFunction function (args, pos)
 
 add :: Value -> Value -> Position -> Either Exception Value
 add x y pos = case (x, y) of
