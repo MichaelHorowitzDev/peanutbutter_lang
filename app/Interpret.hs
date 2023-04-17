@@ -459,7 +459,10 @@ eval (Slice exp start stop pos) = do
     value <- eval exp
     case value of
         (Array vector) -> do
-            start <- getLower start <&> \x -> if x < 0 then V.length vector + x else x
+            start <- getLower start
+                <&> (\x -> if x < 0 then V.length vector + x else x)
+                <&> min (V.length vector)
+                <&> max 0
             end <- getHigher stop
                 <&> (\x -> if x < 0 then V.length vector + x else x)
                 <&> min (V.length vector)
