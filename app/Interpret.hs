@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
 module Interpret where
 
 import Ast
@@ -255,13 +256,13 @@ funcCall :: Function -> [Value] -> Position -> Interpreter Value
 funcCall function args pos = lift $ runFunction function (args, pos)
 
 add :: Value -> Value -> Position -> Either Exception Value
-add = genericNumber (+) (+) "add"
+add = binOpNum (+) "add"
 
 sub :: Value -> Value -> Position -> Either Exception Value
-sub = genericNumber (-) (-) "subtract"
+sub = binOpNum (-) "subtract"
 
 mul :: Value -> Value -> Position -> Either Exception Value
-mul = genericNumber (*) (*) "multiply"
+mul = binOpNum (*) "multiply"
 
 divide :: Value -> Value -> Position -> Either Exception Value
 divide = genericNumber div (/) "divide"
@@ -273,6 +274,20 @@ genericInt _ err x y pos = Left $ errWithOffset pos (binOpTypeErr err x y)
 genericDouble :: (Double -> Double -> Double) -> String -> (Value -> Value -> Position -> Either Exception Value)
 genericDouble f _ (Double x) (Double y) pos = return $ Double (f x y)
 genericDouble _ err x y pos = Left $ errWithOffset pos (binOpTypeErr err x y)
+
+binOpNum :: (forall a. Num a => a -> a -> a) -> String -> Value -> Value -> Position -> Either Exception Value
+binOpNum f err x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Int (f x y)
+    (Double x, Double y) -> return $ Double (f x y)
+    (Int x, Double y) -> return $ Double (f (fromIntegral x) y)
+    (Double x, Int y) -> return $ Double (f x (fromIntegral y))
+    _ -> Left $ errWithOffset pos (binOpTypeErr err x y)
+
+unOpNum :: (forall a. Num a => a -> a) -> String -> Value -> Position -> Either Exception Value
+unOpNum f err x pos = case x of
+    (Int x) -> return $ Int (f x)
+    (Double x) -> return $ Double (f x)
+    _ -> Left $ errWithOffset pos (unOpTypeErr err x)
 
 eitherAlternative :: Either a b -> Either a b -> Either a b
 eitherAlternative x y = case x of
@@ -300,44 +315,33 @@ unaryOp x pos f = do
     x <- eval x
     lift $ except $ f x pos
 
+binOpCompare :: (forall a. Ord a => a -> a -> Bool) -> Value -> Value -> Position -> Either Exception Value
+binOpCompare f x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Bool $ f x y
+    (Double x, Double y) -> return $ Bool $ f x y
+    (Int x, Double y) -> return $ Bool $ f (fromIntegral x) y
+    (Double x, Int y) -> return $ Bool $ f x (fromIntegral y)
+    (String x, String y) -> return $ Bool $ f x y
+    (Bool x, Bool y) -> return $ Bool $ f x y
+    _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
+
 greater :: Value -> Value -> Position -> Either Exception Value
-greater (Int x) (Int y) pos = return $ Bool $ x > y
-greater (Double x) (Double y) pos = return $ Bool $ x > y
-greater x y pos = Left $ errWithOffset pos (binOpTypeErr "compare" x y)
+greater = binOpCompare (>)
 
 greaterEqual :: Value -> Value -> Position -> Either Exception Value
-greaterEqual x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Bool $ x >= y
-    (Double x, Double y) -> return $ Bool $ x >= y
-    _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
+greaterEqual = binOpCompare (>=)
 
 lesser :: Value -> Value -> Position -> Either Exception Value
-lesser x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Bool $ x < y
-    (Double x, Double y) -> return $ Bool $ x < y
-    _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
+lesser = binOpCompare (<)
 
 lesserEqual :: Value -> Value -> Position -> Either Exception Value
-lesserEqual x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Bool $ x <= y
-    (Double x, Double y) -> return $ Bool $ x <= y
-    _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
+lesserEqual = binOpCompare (<=)
 
 equal :: Value -> Value -> Position -> Either Exception Value
-equal x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Bool $ x == y
-    (Double x, Double y) -> return $ Bool $ x == y
-    (String x, String y) -> return $ Bool $ x == y
-    (Bool x, Bool y) -> return $ Bool $ x == y
-    _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
+equal = binOpCompare (==)
 
 notEqual :: Value -> Value -> Position -> Either Exception Value
-notEqual x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Bool $ x /= y
-    (Double x, Double y) -> return $ Bool $ x /= y
-    (String x, String y) -> return $ Bool $ x /= y
-    (Bool x, Bool y) -> return $ Bool $ x /= y
-    _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
+notEqual = binOpCompare (/=)
 
 and' :: Value -> Value -> Position -> Either Exception Value
 and' x y pos = case (x, y) of
@@ -350,10 +354,7 @@ or' x y pos = case (x, y) of
     _ -> Left $ errWithOffset pos (binOpTypeErr "or" x y)
 
 negateVal :: Value -> Position -> Either Exception Value
-negateVal x pos = case x of
-    (Int x) -> return $ Int (negate x)
-    (Double x) -> return $ Double (negate x)
-    _ -> Left $ errWithOffset pos (unOpTypeErr "negate" x)
+negateVal = unOpNum negate "negate"
 
 bang :: Value -> Position -> Either Exception Value
 bang x pos = case x of
@@ -377,10 +378,7 @@ printVal v = putStrLn $ "cannot print value: " ++ show v
 eval :: Exp -> Interpreter Value
 eval (Lit n pos) = return n
 eval (Var s pos) = varLookup s pos
-eval (Add x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ add v1 v2 pos
+eval (Add x y pos) = binOp x y pos add
 eval (Sub x y pos) = binOp x y pos sub
 eval (Mul x y pos) = binOp x y pos mul
 eval (Div x y pos) = binOp x y pos divide
