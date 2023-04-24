@@ -255,27 +255,50 @@ funcCall :: Function -> [Value] -> Position -> Interpreter Value
 funcCall function args pos = lift $ runFunction function (args, pos)
 
 add :: Value -> Value -> Position -> Either Exception Value
-add x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Int (x + y)
-    (Double x, Double y) -> return $ Double (x + y)
-    _ -> Left $ errWithOffset pos (binOpTypeErr "add" x y)
+add = genericNumber (+) (+) "add"
 
 sub :: Value -> Value -> Position -> Either Exception Value
-sub x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Int (x - y)
-    (Double x, Double y) -> return $ Double (x - y)
-    _ -> Left $ errWithOffset pos (binOpTypeErr "subtract" x y)
+sub = genericNumber (-) (-) "subtract"
 
 mul :: Value -> Value -> Position -> Either Exception Value
-mul (Int x) (Int y) pos = Right $ Int (x * y)
-mul (Double x) (Double y) pos = Right $ Double (x * y)
-mul x y pos = Left $ errWithOffset pos (binOpTypeErr "multiply" x y)
+mul = genericNumber (*) (*) "multiply"
 
 divide :: Value -> Value -> Position -> Either Exception Value
-divide x y pos = case (x, y) of
-    (Int x, Int y) -> return $ Int (x `div` y)
-    (Double x, Double y) -> return $ Double (x / y)
-    _ -> Left $ errWithOffset pos (binOpTypeErr "divide" x y)
+divide = genericNumber div (/) "divide"
+
+genericInt :: (Int -> Int -> Int) -> String -> Value -> Value -> Position -> Either Exception Value
+genericInt f _ (Int x) (Int y) pos = return $ Int (f x y)
+genericInt _ err x y pos = Left $ errWithOffset pos (binOpTypeErr err x y)
+
+genericDouble :: (Double -> Double -> Double) -> String -> (Value -> Value -> Position -> Either Exception Value)
+genericDouble f _ (Double x) (Double y) pos = return $ Double (f x y)
+genericDouble _ err x y pos = Left $ errWithOffset pos (binOpTypeErr err x y)
+
+eitherAlternative :: Either a b -> Either a b -> Either a b
+eitherAlternative x y = case x of
+    Right r -> return r
+    Left l -> y
+
+genericNumber :: (Int -> Int -> Int)
+    -> (Double -> Double -> Double)
+    -> String -> Value -> Value -> Position -> Either Exception Value
+genericNumber f g err x y pos = case (x, y) of
+    (Int x, Int y) -> return $ Int (f x y)
+    (Double x, Double y) -> return $ Double (g x y)
+    (Double x, Int y) -> return $ Double (g x (fromIntegral y))
+    (Int x, Double y) -> return $ Double (g (fromIntegral x) y)
+    _ -> Left $ errWithOffset pos (binOpTypeErr err x y)
+
+binOp :: Exp -> Exp -> Position -> (Value -> Value -> Position -> Either Exception Value) -> Interpreter Value
+binOp x y pos f = do
+    x <- eval x
+    y <- eval y
+    lift $ except $ f x y pos
+
+unaryOp :: Exp -> Position -> (Value -> Position -> Either Exception Value) -> Interpreter Value
+unaryOp x pos f = do
+    x <- eval x
+    lift $ except $ f x pos
 
 greater :: Value -> Value -> Position -> Either Exception Value
 greater (Int x) (Int y) pos = return $ Bool $ x > y
@@ -358,56 +381,19 @@ eval (Add x y pos) = do
     v1 <- eval x
     v2 <- eval y
     lift $ except $ add v1 v2 pos
-eval (Sub x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ sub v1 v2 pos
-eval (Mul x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ mul v1 v2 pos
-eval (Div x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ divide v1 v2 pos
-eval (Greater x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ greater v1 v2 pos
-eval (Less x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ lesser v1 v2 pos
-eval (GreaterEqual x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ greaterEqual v1 v2 pos
-eval (LessEqual x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ lesserEqual v1 v2 pos
-eval (Equal x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ equal v1 v2 pos
-eval (NotEqual x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ notEqual v1 v2 pos
-eval (And x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ and' v1 v2 pos
-eval (Or x y pos) = do
-    v1 <- eval x
-    v2 <- eval y
-    lift $ except $ or' v1 v2 pos
-eval (Negate x pos) = do
-    v1 <- eval x
-    lift $ except $ negateVal v1 pos
-eval (Bang x pos) = do
-    v1 <- eval x
-    lift $ except $ bang v1 pos
+eval (Sub x y pos) = binOp x y pos sub
+eval (Mul x y pos) = binOp x y pos mul
+eval (Div x y pos) = binOp x y pos divide
+eval (Greater x y pos) = binOp x y pos greater
+eval (Less x y pos) = binOp x y pos lesser
+eval (GreaterEqual x y pos) = binOp x y pos greaterEqual
+eval (LessEqual x y pos) = binOp x y pos lesserEqual
+eval (Equal x y pos) = binOp x y pos equal
+eval (NotEqual x y pos) = binOp x y pos notEqual
+eval (And x y pos) = binOp x y pos and'
+eval (Or x y pos) = binOp x y pos or'
+eval (Negate x pos) = unaryOp x pos negateVal
+eval (Bang x pos) = unaryOp x pos bang
 eval (CallFunc exp args pos) = do
     value <- eval exp
     case value of
