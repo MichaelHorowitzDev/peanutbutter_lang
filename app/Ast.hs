@@ -2,7 +2,7 @@ module Ast (
   Function (..),
   Value (..),
   getInt,
-  getFloat,
+  getDouble,
   getFloating,
   getString,
   getBool,
@@ -101,7 +101,7 @@ getStmtPosition (CallExp _ pos) = pos
 getStmtPosition (Print _ pos) = pos
 
 data Value = Int Int
-    | Float Float
+    | Double Double
     | String String
     | Bool Bool
     | Func Function
@@ -113,16 +113,16 @@ data Value = Int Int
     | Void
     | Null
 
-getFloating :: Value -> Maybe Float
-getFloating v = getFloat v <|> fromIntegral <$> getInt v
+getFloating :: Value -> Maybe Double
+getFloating v = getDouble v <|> fromIntegral <$> getInt v
 
 getInt :: Value -> Maybe Int
 getInt (Int n) = Just n
 getInt _ = Nothing
 
-getFloat :: Value -> Maybe Float
-getFloat (Float f) = Just f
-getFloat _ = Nothing
+getDouble :: Value -> Maybe Double
+getDouble (Double d) = Just d
+getDouble _ = Nothing
 
 getString :: Value -> Maybe String
 getString (String s) = Just s
@@ -143,7 +143,7 @@ getFunc _ = Nothing
 instance Show Value where
     show a = case a of
         (Int n) -> show n
-        (Float f) -> show f
+        (Double d) -> show d
         (String s) -> show s
         (Bool b) -> show b
         (Func {}) -> "<func>"
@@ -207,7 +207,7 @@ getExpPosition (Var _ pos) = pos
 valueTypeLookup :: Value -> String
 valueTypeLookup v = case v of
     Int {} -> "Int"
-    Float {} -> "Float"
+    Double {} -> "Double"
     String {} -> "String"
     Bool {} -> "Bool"
     Func {} -> "Function"

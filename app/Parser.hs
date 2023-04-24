@@ -35,8 +35,8 @@ parseNum = binary <|> hex <|> oct <|> normalNum
             char '-'
             negate <$> int
             <|> int
-        floatPart :: Int -> Parser Float
-        floatPart int = do
+        doublePart :: Int -> Parser Double
+        doublePart int = do
             char '.'
             float <- some digitChar
             notFollowedBy letterChar
@@ -45,7 +45,7 @@ parseNum = binary <|> hex <|> oct <|> normalNum
         normalNum = do
             offset <- getOffset
             int <- intPart
-            num <- (Lit . Float <$> floatPart int) <|> return (Lit $ Int int)
+            num <- (Lit . Double <$> doublePart int) <|> return (Lit $ Int int)
             len <- getOffset <&> subtract offset
             return $ num (Position offset len)
         base :: Int -> Char -> String -> Parser Char -> Parser Exp

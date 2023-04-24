@@ -39,7 +39,7 @@ sqrtNative :: NativeFunction
 sqrtNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
     f <- getValueType getFloating v "Float" pos
-    return (Float $ sqrt f)
+    return (Double $ sqrt f)
 
 getValueType :: (MonadTrans m, Monad t) => (Value -> Maybe a) -> Value -> String -> Position -> m (ExceptT Exception t) a
 getValueType f v expected pos =
@@ -53,7 +53,7 @@ showNative = NativeFunction 1 $ do
 clockNative :: NativeFunction
 clockNative = NativeFunction 0 $ do
     time <- liftIO (getCurrentTime <&> realToFrac . utctDayTime)
-    return $ Float time
+    return $ Double time
 
 vectorLengthNative :: NativeFunction
 vectorLengthNative = NativeFunction 1 $ do

@@ -257,53 +257,53 @@ funcCall function args pos = lift $ runFunction function (args, pos)
 add :: Value -> Value -> Position -> Either Exception Value
 add x y pos = case (x, y) of
     (Int x, Int y) -> return $ Int (x + y)
-    (Float x, Float y) -> return $ Float (x + y)
+    (Double x, Double y) -> return $ Double (x + y)
     _ -> Left $ errWithOffset pos (binOpTypeErr "add" x y)
 
 sub :: Value -> Value -> Position -> Either Exception Value
 sub x y pos = case (x, y) of
     (Int x, Int y) -> return $ Int (x - y)
-    (Float x, Float y) -> return $ Float (x - y)
+    (Double x, Double y) -> return $ Double (x - y)
     _ -> Left $ errWithOffset pos (binOpTypeErr "subtract" x y)
 
 mul :: Value -> Value -> Position -> Either Exception Value
 mul (Int x) (Int y) pos = Right $ Int (x * y)
-mul (Float x) (Float y) pos = Right $ Float (x * y)
+mul (Double x) (Double y) pos = Right $ Double (x * y)
 mul x y pos = Left $ errWithOffset pos (binOpTypeErr "multiply" x y)
 
 divide :: Value -> Value -> Position -> Either Exception Value
 divide x y pos = case (x, y) of
     (Int x, Int y) -> return $ Int (x `div` y)
-    (Float x, Float y) -> return $ Float (x / y)
+    (Double x, Double y) -> return $ Double (x / y)
     _ -> Left $ errWithOffset pos (binOpTypeErr "divide" x y)
 
 greater :: Value -> Value -> Position -> Either Exception Value
 greater (Int x) (Int y) pos = return $ Bool $ x > y
-greater (Float x) (Float y) pos = return $ Bool $ x > y
+greater (Double x) (Double y) pos = return $ Bool $ x > y
 greater x y pos = Left $ errWithOffset pos (binOpTypeErr "compare" x y)
 
 greaterEqual :: Value -> Value -> Position -> Either Exception Value
 greaterEqual x y pos = case (x, y) of
     (Int x, Int y) -> return $ Bool $ x >= y
-    (Float x, Float y) -> return $ Bool $ x >= y
+    (Double x, Double y) -> return $ Bool $ x >= y
     _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
 
 lesser :: Value -> Value -> Position -> Either Exception Value
 lesser x y pos = case (x, y) of
     (Int x, Int y) -> return $ Bool $ x < y
-    (Float x, Float y) -> return $ Bool $ x < y
+    (Double x, Double y) -> return $ Bool $ x < y
     _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
 
 lesserEqual :: Value -> Value -> Position -> Either Exception Value
 lesserEqual x y pos = case (x, y) of
     (Int x, Int y) -> return $ Bool $ x <= y
-    (Float x, Float y) -> return $ Bool $ x <= y
+    (Double x, Double y) -> return $ Bool $ x <= y
     _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
 
 equal :: Value -> Value -> Position -> Either Exception Value
 equal x y pos = case (x, y) of
     (Int x, Int y) -> return $ Bool $ x == y
-    (Float x, Float y) -> return $ Bool $ x == y
+    (Double x, Double y) -> return $ Bool $ x == y
     (String x, String y) -> return $ Bool $ x == y
     (Bool x, Bool y) -> return $ Bool $ x == y
     _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
@@ -311,7 +311,7 @@ equal x y pos = case (x, y) of
 notEqual :: Value -> Value -> Position -> Either Exception Value
 notEqual x y pos = case (x, y) of
     (Int x, Int y) -> return $ Bool $ x /= y
-    (Float x, Float y) -> return $ Bool $ x /= y
+    (Double x, Double y) -> return $ Bool $ x /= y
     (String x, String y) -> return $ Bool $ x /= y
     (Bool x, Bool y) -> return $ Bool $ x /= y
     _ -> Left $ errWithOffset pos (binOpTypeErr "compare" x y)
@@ -329,7 +329,7 @@ or' x y pos = case (x, y) of
 negateVal :: Value -> Position -> Either Exception Value
 negateVal x pos = case x of
     (Int x) -> return $ Int (negate x)
-    (Float x) -> return $ Float (negate x)
+    (Double x) -> return $ Double (negate x)
     _ -> Left $ errWithOffset pos (unOpTypeErr "negate" x)
 
 bang :: Value -> Position -> Either Exception Value
@@ -339,7 +339,7 @@ bang x pos = case x of
 
 printVal :: Value -> IO ()
 printVal (String s) = putStrLn s
-printVal (Float f) = print f
+printVal (Double f) = print f
 printVal (Int n) = print n
 printVal (Bool b) = putStrLn (if b then "true" else "false")
 printVal (Func {}) = putStrLn "<func>"
