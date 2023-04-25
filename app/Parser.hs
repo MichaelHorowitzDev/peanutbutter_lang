@@ -10,6 +10,7 @@ import Control.Monad
 import Data.Functor
 import Ast
 import qualified Data.Vector as V
+import Data.Char (digitToInt)
 
 type Parser = Parsec Void String
 
@@ -52,12 +53,12 @@ parseNum = binary <|> hex <|> oct <|> normalNum
         base b letter name p = do
             offset <- getOffset
             string ['0', letter]
-            list <- some p
+            list <- map digitToInt <$> some p
             notFollowedBy numberChar
                 <|> (lookAhead numberChar >>= \c -> fail ("invalid digit '" ++ [c] ++ "' in " ++ name ++ " number"))
             notFollowedBy letterChar
                 <|> (lookAhead letterChar >>= \c -> fail ("invalid character '" ++ [c] ++ "' in " ++ name ++ " number"))
-            let n = foldl (\acc x -> acc * b + read [x]) 0 list
+            let n = foldl (\acc x -> acc * b + x) 0 list
             len <- getOffset <&> subtract offset
             return $ (Lit $ Int n) (Position offset len)
 
