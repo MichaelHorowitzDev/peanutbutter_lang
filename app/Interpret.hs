@@ -343,15 +343,37 @@ equal = binOpCompare (==)
 notEqual :: Value -> Value -> Position -> Either Exception Value
 notEqual = binOpCompare (/=)
 
-and' :: Value -> Value -> Position -> Either Exception Value
-and' x y pos = case (x, y) of
-    (Bool x, Bool y) -> return $ Bool $ x && y
-    _ -> Left $ errWithOffset pos (binOpTypeErr "and" x y)
+and' :: Exp -> Exp -> Position -> Interpreter Value
+and' x y pos = do
+    bool <- evalBool x
+    if bool
+        then Bool <$> evalBool y
+    else
+        return $ Bool False
+    where
+        evalBool :: Exp -> Interpreter Bool
+        evalBool exp = do
+            v1 <- eval exp
+            case v1 of
+                (Bool x) -> return x
+                _ -> lift $ except $ Left $ errWithOffset
+                    (getExpPosition exp) (WrongTypeErr (valueTypeLookup v1) "Bool")
 
-or' :: Value -> Value -> Position -> Either Exception Value
-or' x y pos = case (x, y) of
-    (Bool x, Bool y) -> return $ Bool $ x || y
-    _ -> Left $ errWithOffset pos (binOpTypeErr "or" x y)
+or' :: Exp -> Exp -> Position -> Interpreter Value
+or' x y pos = do
+    bool <- evalBool x
+    if bool
+        then return $ Bool True
+    else
+        Bool <$> evalBool y
+    where
+        evalBool :: Exp -> Interpreter Bool
+        evalBool exp = do
+            v1 <- eval exp
+            case v1 of
+                (Bool x) -> return x
+                _ -> lift $ except $ Left $ errWithOffset
+                    (getExpPosition exp) (WrongTypeErr (valueTypeLookup v1) "Bool")
 
 negateVal :: Value -> Position -> Either Exception Value
 negateVal = unOpNum negate "negate"
@@ -388,8 +410,8 @@ eval (GreaterEqual x y pos) = binOp x y pos greaterEqual
 eval (LessEqual x y pos) = binOp x y pos lesserEqual
 eval (Equal x y pos) = binOp x y pos equal
 eval (NotEqual x y pos) = binOp x y pos notEqual
-eval (And x y pos) = binOp x y pos and'
-eval (Or x y pos) = binOp x y pos or'
+eval (And x y pos) = and' x y pos
+eval (Or x y pos) = or' x y pos
 eval (Negate x pos) = unaryOp x pos negateVal
 eval (Bang x pos) = unaryOp x pos bang
 eval (CallFunc exp args pos) = do
