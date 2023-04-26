@@ -150,7 +150,7 @@ funcCall :: Parser [Exp]
 funcCall = do
     lexeme (char '(')
     args <- lexeme parseArgs
-    lexeme (char ')')
+    char ')'
     return args
     where
         parseArgs :: Parser [Exp]
@@ -169,7 +169,7 @@ subscriptSlice exp = do
         exp' <- parseExp
         (latter <&> Slice exp (Just exp')) <|> return (Subscript exp exp')
         ) <|> (latter <&> Slice exp Nothing)
-    lexeme (char ']')
+    char ']'
     return posExp
     where
         latter :: Parser (Maybe Exp)
