@@ -120,6 +120,21 @@ vectorAppendNative = NativeFunction 2 $ do
     let newVector = V.snoc vector value
     return $ Array newVector
 
+stringToListNative :: NativeFunction
+stringToListNative = NativeFunction 1 $ do
+    (v, pos) <- firstArg
+    s <- getValueType getString v "String" pos
+    let vector = V.map (\x -> String [x]) (V.fromList s)
+    return $ Array vector
+
+listToStringNative :: NativeFunction
+listToStringNative = NativeFunction 1 $ do
+    (v, pos) <- firstArg
+    list <- getValueType getArray v "List" pos
+    String . concat . V.toList <$> V.mapM (\x -> case getString x of
+        Just s -> return s
+        Nothing -> return "") list
+
 inputNative :: NativeFunction
 inputNative = NativeFunction 0 $ do
     liftIO $ hSetBuffering stdout NoBuffering
@@ -153,5 +168,7 @@ nativeFuncs = [
     ("map", vectorMapNative),
     ("filter", vectorFilterNative),
     ("vectorWithRange", vectorWithRangeNative),
-    ("foldr", vectorFoldrNative)
+    ("foldr", vectorFoldrNative),
+    ("toList", stringToListNative),
+    ("toString", listToStringNative)
     ]
