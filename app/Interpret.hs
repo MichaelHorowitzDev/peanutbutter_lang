@@ -455,6 +455,9 @@ eval (Subscript exp sub pos) = do
         (Array vector) -> do
             index <- getIndex (V.length vector)
             return $ vector V.! index
+        (String s) -> do
+            index <- getIndex (length s)
+            return $ (\x -> String [x]) $ s !! index
         _ -> throwErr $ InterpretError (SubscriptNonArray (valueTypeLookup value)) pos
     where
         getIndex :: Int -> Interpreter Int
@@ -466,15 +469,10 @@ eval (Slice exp start stop pos) = do
     value <- eval exp
     case value of
         (Array vector) -> do
-            start <- getLower start
-                <&> (\x -> if x < 0 then V.length vector + x else x)
-                <&> min (V.length vector)
-                <&> max 0
-            end <- getHigher stop
-                <&> (\x -> if x < 0 then V.length vector + x else x)
-                <&> min (V.length vector)
-            let newVector = V.slice start (max 0 (end - start)) vector
-            return (Array newVector)
+            Array <$> performSlice vector
+        (String s) -> do
+            let vector = V.fromList s
+            String . V.toList <$> performSlice vector
         _ -> throwErr $ InterpretError (SubscriptNonArray (valueTypeLookup value)) pos
     where
         getLower :: Maybe Exp -> Interpreter Int
@@ -491,6 +489,16 @@ eval (Slice exp start stop pos) = do
             case getInt value of
                 Just x -> return x
                 Nothing -> throwErr $ InterpretError (WrongTypeErr (valueTypeLookup value) "Int") pos
+        performSlice :: V.Vector a -> Interpreter (V.Vector a)
+        performSlice vector = do
+            start <- getLower start
+                <&> (\x -> if x < 0 then V.length vector + x else x)
+                <&> min (V.length vector)
+                <&> max 0
+            end <- getHigher stop
+                <&> (\x -> if x < 0 then V.length vector + x else x)
+                <&> min (V.length vector)
+            return $ V.slice start (max 0 (end - start)) vector
 
 eval (Getter exp var pos) = do
     value <- eval exp
