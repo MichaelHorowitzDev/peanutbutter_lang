@@ -313,14 +313,9 @@ parseLetAssign = do
     lexeme (char '=') <|> fail "no `=` found in variable assignment"
     LetAssign iden <$> parseExp <|> fail "no right hand side of equation"
 
-guardError :: Bool -> String -> Parser ()
-guardError True s = fail s
-guardError False s = return ()
-
 parseVarReassign :: Parser (Position -> Stmt)
 parseVarReassign = do
     iden <- parseIdentifier
-    guardError (iden == "var") "unexpected `var` keyword found in variable reassign"
     lexeme (char '=')
     VarReassign iden <$> parseExp
 
