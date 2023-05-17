@@ -536,6 +536,8 @@ initVars stmts = getDecs stmts ++ stmts
         getDecs (x:xs) = case x of
             (VarAssign s _ _) -> VarAssign s (Lit Null (Position 0 0)) (Position 0 0) : getDecs xs
             (LetAssign s _ _) -> LetAssign s (Lit Null (Position 0 0)) (Position 0 0) : getDecs xs
+            (FuncDef s _ _ _) -> LetAssign s (Lit Null (Position 0 0)) (Position 0 0) : getDecs xs
+            (DataDef s _ _ _) -> LetAssign s (Lit Null (Position 0 0)) (Position 0 0) : getDecs xs
             _ -> getDecs xs
 
 exec :: Stmt -> Interpreter Env
