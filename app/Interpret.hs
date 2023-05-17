@@ -589,7 +589,7 @@ exec (FuncDef s params stmt pos) = do
     lift $ except $ guardEither (not scoped) (errWithOffset pos (InvalidRedeclarationOfVar s))
     lift $ except $ guardEither (nubOrd params == params) (errWithOffset pos DuplicateFuncParams)
     let varInits = initVars stmt
-    let function = Func $ createRunFunction params stmt env
+    let function = Func $ createRunFunction params varInits env
     addLet (s, function)
 exec (DataDef s args stmts pos) = do
     scoped <- inScope s
