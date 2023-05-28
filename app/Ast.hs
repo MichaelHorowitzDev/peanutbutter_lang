@@ -12,6 +12,7 @@ import qualified Data.Vector as V
 import Control.Monad.Reader
 import Control.Applicative
 import qualified Data.Map.Strict as Map
+import Data.Either.Extra
 
 data Exception = ErrMsg String
     | ReturnExcept Env Exp Position
@@ -93,32 +94,38 @@ data Value = Int Int
     | Void
     | Null
 
-getFloating :: Value -> Maybe Double
-getFloating v = getDouble v <|> fromIntegral <$> getInt v
+(<||>) :: Either a b -> Either a b -> Either a b
+a <||> b = either (const b) return a
 
-getInt :: Value -> Maybe Int
-getInt (Int n) = Just n
-getInt _ = Nothing
+getFloating :: Value -> Either InterpretErrorType Double
+getFloating v = mapLeft (const $ WrongTypeErr (valueTypeLookup v) "Floating") (getDouble v <||> (fromIntegral <$> getInt v))
 
-getDouble :: Value -> Maybe Double
-getDouble (Double d) = Just d
-getDouble _ = Nothing
+getInt :: Value -> Either InterpretErrorType Int
+getInt (Int n) = Right n
+getInt n = getValueErr "Int" n
 
-getString :: Value -> Maybe String
-getString (String s) = Just s
-getString _ = Nothing
+getValueErr :: String -> Value -> Either InterpretErrorType a
+getValueErr s v = Left $ WrongTypeErr (valueTypeLookup v) s
 
-getBool :: Value -> Maybe Bool
-getBool (Bool b) = Just b
-getBool _ = Nothing
+getDouble :: Value -> Either InterpretErrorType Double
+getDouble (Double d) = Right d
+getDouble v = getValueErr "Double" v
 
-getArray :: Value -> Maybe (V.Vector Value)
-getArray (Array v) = Just v
-getArray _ = Nothing
+getString :: Value -> Either InterpretErrorType String
+getString (String s) = Right s
+getString s = getValueErr "String" s
 
-getFunc :: Value -> Maybe Function
-getFunc (Func function) = Just function
-getFunc _ = Nothing
+getBool :: Value -> Either InterpretErrorType Bool
+getBool (Bool b) = Right b
+getBool b = getValueErr "Bool" b
+
+getArray :: Value -> Either InterpretErrorType (V.Vector Value)
+getArray (Array v) = Right v
+getArray v = getValueErr "List" v
+
+getFunc :: Value -> Either InterpretErrorType Function
+getFunc (Func function) = Right function
+getFunc v = getValueErr "Function" v
 
 instance Show Value where
     show a = case a of

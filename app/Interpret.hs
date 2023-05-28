@@ -462,7 +462,8 @@ eval (Subscript exp sub pos) = do
     where
         getIndex :: Int -> Interpreter Int
         getIndex n = do
-            index <- eval sub >>= \index -> lift $ except $ maybeToEither (errWithOffset pos $ WrongTypeErr (valueTypeLookup index) "Int") (getInt index)
+            val <- eval sub
+            index <- lift $ except $ mapLeft (errWithOffset pos) (getInt val)
             lift $ except $ guardEither (n > index && index >= 0) (errWithOffset pos $ IndexOutOfBounds index n)
             return index
 eval (Slice exp start stop pos) = do
@@ -480,15 +481,15 @@ eval (Slice exp start stop pos) = do
         getLower (Just exp) = do
             value <- eval exp
             case getInt value of
-                Just x -> return x
-                Nothing -> throwErr $ InterpretError (WrongTypeErr (valueTypeLookup value) "Int") pos
+                Right x -> return x
+                Left err -> throwErr $ InterpretError err pos
         getHigher :: Maybe Exp -> Interpreter Int
         getHigher Nothing = return maxBound
         getHigher (Just exp) = do
             value <- eval exp
             case getInt value of
-                Just x -> return x
-                Nothing -> throwErr $ InterpretError (WrongTypeErr (valueTypeLookup value) "Int") pos
+                Right x -> return x
+                Left err -> throwErr $ InterpretError err pos
         performSlice :: V.Vector a -> Interpreter (V.Vector a)
         performSlice vector = do
             start <- getLower start

@@ -38,12 +38,11 @@ thirdArg = ReaderT $ \args -> return $ args !! 2
 sqrtNative :: NativeFunction
 sqrtNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
-    f <- getValueType getFloating v "Float" pos
+    f <- getValueType getFloating v pos
     return (Double $ sqrt f)
 
-getValueType :: (MonadTrans m, Monad t) => (Value -> Maybe a) -> Value -> String -> Position -> m (ExceptT Exception t) a
-getValueType f v expected pos =
-    lift $ except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) expected) (f v)
+getValueType :: (MonadTrans m, Monad t) => (Value -> Either InterpretErrorType a) -> Value -> Position -> m (ExceptT Exception t) a
+getValueType f v pos = lift $ except $ mapLeft (throwWithOffset pos) (f v)
 
 showNative :: NativeFunction
 showNative = NativeFunction 1 $ do
@@ -58,15 +57,15 @@ clockNative = NativeFunction 0 $ do
 vectorLengthNative :: NativeFunction
 vectorLengthNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
-    v <- getValueType getArray v "List" pos
+    v <- getValueType getArray v pos
     return $ Int $ V.length v
 
 vectorMapNative :: NativeFunction
 vectorMapNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
-    vector <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v pos
     (v, pos) <- secondArg
-    function <- getValueType getFunc v "Function" pos
+    function <- getValueType getFunc v pos
     newVector <- V.mapM (\x -> lift $ runFunction function ([x], pos)) vector
     return $ Array newVector
 
@@ -80,39 +79,39 @@ vFoldrM f acc vector
 vectorFoldrNative :: NativeFunction
 vectorFoldrNative = NativeFunction 3 $ do
     (v, pos) <- firstArg
-    vector <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v pos
     (v, pos) <- secondArg
-    function <- getValueType getFunc v "Function" pos
+    function <- getValueType getFunc v pos
     (v, pos) <- thirdArg
     vFoldrM (\x acc -> lift $ runFunction function ([x, acc], pos)) v vector
 
 vectorFilterNative :: NativeFunction
 vectorFilterNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
-    vector <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v pos
     (v, pos) <- secondArg
-    function <- getValueType getFunc v "Function" pos
+    function <- getValueType getFunc v pos
     newVector <- V.filterM (\x -> lift $ getBool' function x pos) vector
     return $ Array newVector
     where
         getBool' :: Function -> Value -> Position -> (ExceptT Exception IO) Bool
         getBool' f x pos = do
             v <- runFunction f ([x], pos)
-            except $ maybeToEither (throwWithOffset pos $ WrongTypeErr (valueTypeLookup v) "Bool") (getBool v)
+            except $ mapLeft (throwWithOffset pos) (getBool v)
 
 vectorWithRangeNative :: NativeFunction
 vectorWithRangeNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
-    lower <- getValueType getInt v "Int" pos
+    lower <- getValueType getInt v pos
     (v, pos) <- secondArg
-    upper <- getValueType getInt v "Int" pos
+    upper <- getValueType getInt v pos
     let size = max 0 (upper - lower + 1)
     return $ Array (V.map Int $ V.fromList [lower..upper])
 
 vectorAppendNative :: NativeFunction
 vectorAppendNative = NativeFunction 2 $ do
     (v, pos) <- firstArg
-    vector <- getValueType getArray v "List" pos
+    vector <- getValueType getArray v pos
     (value, pos) <- secondArg
     let newVector = V.snoc vector value
     return $ Array newVector
@@ -120,17 +119,17 @@ vectorAppendNative = NativeFunction 2 $ do
 stringToListNative :: NativeFunction
 stringToListNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
-    s <- getValueType getString v "String" pos
+    s <- getValueType getString v pos
     let vector = V.map (\x -> String [x]) (V.fromList s)
     return $ Array vector
 
 listToStringNative :: NativeFunction
 listToStringNative = NativeFunction 1 $ do
     (v, pos) <- firstArg
-    list <- getValueType getArray v "List" pos
+    list <- getValueType getArray v pos
     String . concat . V.toList <$> V.mapM (\x -> case getString x of
-        Just s -> return s
-        Nothing -> return "") list
+        Right s -> return s
+        _ -> return "") list
 
 inputNative :: NativeFunction
 inputNative = NativeFunction 0 $ do
@@ -142,7 +141,7 @@ putStrNative :: NativeFunction
 putStrNative = NativeFunction 1 $ do
     liftIO $ hSetBuffering stdout NoBuffering
     (v, pos) <- firstArg
-    s <- getValueType getString v "String" pos
+    s <- getValueType getString v pos
     liftIO (putStr s)
     return Void
 
