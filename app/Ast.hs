@@ -188,6 +188,7 @@ getExpPosition (CallFunc _ _ pos) = pos
 getExpPosition (Lambda _ _ pos) = pos
 getExpPosition (ArrayDef _ pos) = pos
 getExpPosition (Subscript _ _ pos) = pos
+getExpPosition (Getter _ _ pos) = pos
 getExpPosition (Lit _ pos) = pos
 getExpPosition (Var _ pos) = pos
 
