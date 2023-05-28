@@ -84,10 +84,7 @@ vectorFoldrNative = NativeFunction 3 $ do
     (v, pos) <- secondArg
     function <- getValueType getFunc v "Function" pos
     (v, pos) <- thirdArg
-    vFoldrM (\x acc -> lift $ runFunc function (x, acc) pos) v vector
-    where
-        runFunc :: Function -> (Value, Value) -> Position -> (ExceptT Exception IO) Value
-        runFunc f (x, acc) pos = runFunction f ([x, acc], pos)
+    vFoldrM (\x acc -> lift $ runFunction function ([x, acc], pos)) v vector
 
 vectorFilterNative :: NativeFunction
 vectorFilterNative = NativeFunction 2 $ do
