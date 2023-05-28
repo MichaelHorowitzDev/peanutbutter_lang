@@ -3,7 +3,7 @@ name: syp-interpreter
 version: 0.1.0.0
 maintainer: michaelhorowitzdev@gmail.com
 author: MichaelHorowitzDev
-x-ghc-framework-version: 8.6.4-13.14-3
+x-ghc-framework-version: 9.2.7
 x-last-ide-version: HfM1.8.2
 extra-source-files:
     CHANGELOG.md
