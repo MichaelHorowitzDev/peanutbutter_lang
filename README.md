@@ -96,9 +96,9 @@ They are created like so:
 
 ```swift
 data Vector(x, y) {
-	func add(vector) {
-		return Vector(self.x + vector.x, self.y + vector.y);
-	}
+  func add(vector) {
+    return Vector(self.x + vector.x, self.y + vector.y);
+  }
 }
 
 let x = Vector(2, 7);
