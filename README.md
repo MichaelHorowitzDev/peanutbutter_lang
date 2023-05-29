@@ -73,6 +73,13 @@ func f() {
 }
 f();
 ```
+```
+example.pb:3:9:
+  |
+3 |   print x;
+  |         ^
+cannot reference mutable variable `x` declared in outer scope
+```
 If the variable were immutable though, this code would work fine:
 ```swift
 let x = 10;
