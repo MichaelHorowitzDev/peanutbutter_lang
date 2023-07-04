@@ -30,6 +30,7 @@ let string = "Hello, World!";
 ```
 Booleans:
 ```true``` or ```false```
+
 Lists:
 ```swift
 [4, 8.3, "apple", false];
